@@ -2,7 +2,7 @@
 
 This extension receives `application/pdf` responses directly from Edge's MIME-handler API. It works with PDFs returned by POST requests and single-use URLs without repeating the original request.
 
-Version 1.0.1 captures the one-use PDF stream before loading PDF.js and reports the exact startup phase if Edge or the viewer fails.
+Version 1.0.2 captures the one-use PDF stream before loading PDF.js, initializes the viewer with PDF.js 6 correctly and reports the exact startup phase if Edge or the viewer fails.
 
 ## Install
 
@@ -26,7 +26,7 @@ Close any PDF tabs opened with the previous version before testing the updated e
 - Download with `Ctrl+S`
 - Print with `Ctrl+P`
 - Clockwise rotation
-- Per-document fallback to the built-in Edge viewer
+- Native-viewer fallback before capture and PDF download recovery after capture
 
 ## Notes
 
@@ -34,6 +34,7 @@ Close any PDF tabs opened with the previous version before testing the updated e
 - PDF.js is bundled locally; the extension makes no CDN request.
 - Printing prepares the document at 144 DPI before opening the Windows print dialog.
 - If two extensions register for PDFs, the most recently installed one becomes the active handler.
+- A POST-generated PDF cannot be requested again as a normal GET. If rendering fails after capture, use **Download captured PDF** rather than reopening the original URL.
 
 ## Third-party software
 

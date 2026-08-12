@@ -22,6 +22,7 @@ const elements = {
   printContainer: document.getElementById("printContainer"),
   rotateButton: document.getElementById("rotateButton"),
   toast: document.getElementById("toast"),
+  viewer: document.getElementById("viewer"),
   viewerContainer: document.getElementById("viewerContainer"),
   zoomIn: document.getElementById("zoomIn"),
   zoomMode: document.getElementById("zoomMode"),
@@ -77,6 +78,7 @@ function showError(error) {
   elements.busyOverlay.querySelector(".busy-card").classList.add("error");
   elements.busyText.textContent = `Stopped while ${currentPhase.toLowerCase()}: ${value.name}: ${value.message}`;
   elements.busyProgress.hidden = true;
+  elements.errorFallback.textContent = blobUrl ? "Download captured PDF" : "Open in Edge viewer";
   elements.errorFallback.hidden = false;
 }
 
@@ -257,6 +259,7 @@ function initializeViewer(viewerLibrary) {
   findController = new PDFFindController({ eventBus, linkService });
   pdfViewer = new PDFViewer({
     container: elements.viewerContainer,
+    viewer: elements.viewer,
     eventBus,
     linkService,
     findController,
@@ -323,11 +326,24 @@ function updateFindResults(matchesCount) {
 }
 
 async function fallbackToEdge() {
+  if (documentBlob) {
+    showToast("The POST PDF is already captured. Download it to open it externally.");
+    return;
+  }
+
   try {
     await chrome.mimeHandler.abortAndFallbackToNativeHandler();
   } catch (error) {
     showToast(`Edge viewer could not be opened: ${error.message}`);
   }
+}
+
+function recoverFromError() {
+  if (blobUrl) {
+    downloadDocument();
+    return;
+  }
+  fallbackToEdge();
 }
 
 function downloadDocument() {
@@ -478,7 +494,7 @@ function bindControls() {
   elements.downloadButton.addEventListener("click", downloadDocument);
   elements.printButton.addEventListener("click", printDocument);
   elements.nativeButton.addEventListener("click", fallbackToEdge);
-  elements.errorFallback.addEventListener("click", fallbackToEdge);
+  elements.errorFallback.addEventListener("click", recoverFromError);
 
   window.addEventListener("keydown", (event) => {
     if (!(event.ctrlKey || event.metaKey)) {
