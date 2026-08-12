@@ -2,7 +2,9 @@
 
 This extension receives `application/pdf` responses directly from Edge's MIME-handler API. It works with PDFs returned by POST requests and single-use URLs without repeating the original request.
 
-Version 1.0.3 captures the one-use PDF stream before loading PDF.js, initializes the viewer with PDF.js 6 correctly and prints at the PDF's exact page size using a 300 DPI raster.
+Version 1.0.4 captures the one-use PDF stream before loading PDF.js, initializes the viewer with PDF.js 6 correctly and prints at up to 600 DPI with a 6 mm printer-safe margin.
+
+The fast viewer only activates for PDFs whose original URL is on `https://solutions.inet-logistics.com`. PDFs from every other origin are returned to Edge's native viewer before their stream is consumed.
 
 ## Install
 
@@ -32,7 +34,8 @@ Close any PDF tabs opened with the previous version before testing the updated e
 
 - Edge 151 or newer is required.
 - PDF.js is bundled locally; the extension makes no CDN request.
-- Printing prepares the document at 300 DPI and declares the PDF's physical page size before opening the Windows print dialog.
+- Printing prepares the document at up to 600 DPI, declares the PDF's physical page size and leaves a 6 mm safe margin before opening the Windows print dialog.
+- The source check requires the exact HTTPS origin `https://solutions.inet-logistics.com`; HTTP, subdomains and similar-looking domains are not accepted.
 - If two extensions register for PDFs, the most recently installed one becomes the active handler.
 - A POST-generated PDF cannot be requested again as a normal GET. If rendering fails after capture, use **Download captured PDF** rather than reopening the original URL.
 

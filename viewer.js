@@ -31,7 +31,10 @@ const elements = {
 };
 
 const PDF_POINTS_PER_INCH = 72;
-const PRINT_RESOLUTION = 300;
+const PRINT_RESOLUTION = 600;
+const MAX_PRINT_PIXELS = 40000000;
+const PRINT_SAFE_MARGIN_MM = 6;
+const ALLOWED_PDF_ORIGIN = "https://solutions.inet-logistics.com";
 
 let blobUrl = null;
 let currentPhase = "starting the viewer";
@@ -157,6 +160,14 @@ function resolveDocumentName(info) {
   return "document.pdf";
 }
 
+function isAllowedSourceUrl(value) {
+  try {
+    return new URL(value).origin === ALLOWED_PDF_ORIGIN;
+  } catch {
+    return false;
+  }
+}
+
 async function readStreamResponse(response) {
   if (!response.body?.getReader) {
     return response.arrayBuffer();
@@ -202,6 +213,12 @@ async function capturePdfStream() {
   }
 
   streamInfo = await chrome.mimeHandler.getStreamInfo();
+  if (!isAllowedSourceUrl(streamInfo.originalUrl)) {
+    setPhase("Opening PDF in Edge viewer");
+    await chrome.mimeHandler.abortAndFallbackToNativeHandler();
+    return new Promise(() => {});
+  }
+
   setPhase("Receiving PDF");
 
   const slowStreamTimer = setTimeout(() => {
@@ -405,12 +422,20 @@ function setPrintPageSize(pageSizes) {
 
   printPageStyleSheet = new CSSStyleSheet();
   printPageStyleSheet.replaceSync(
-    `@page { size: ${width.toFixed(3)}pt ${height.toFixed(3)}pt; margin: 0; }`,
+    `@page { size: ${width.toFixed(3)}pt ${height.toFixed(3)}pt; margin: ${PRINT_SAFE_MARGIN_MM}mm; }`,
   );
   document.adoptedStyleSheets = [
     ...document.adoptedStyleSheets,
     printPageStyleSheet,
   ];
+}
+
+function getPrintUnits(viewport) {
+  const requestedUnits = PRINT_RESOLUTION / PDF_POINTS_PER_INCH;
+  const pixelLimitUnits = Math.sqrt(
+    MAX_PRINT_PIXELS / (viewport.width * viewport.height),
+  );
+  return Math.min(requestedUnits, pixelLimitUnits);
 }
 
 async function printDocument() {
@@ -424,7 +449,6 @@ async function printDocument() {
   const previousTitle = document.title;
 
   try {
-    const printUnits = PRINT_RESOLUTION / PDF_POINTS_PER_INCH;
     const rotationOffset = pdfViewer.pagesRotation;
     const pageSizes = [];
     const optionalContentConfigPromise = pdfDocument.getOptionalContentConfig({
@@ -441,6 +465,7 @@ async function printDocument() {
       const page = await pdfDocument.getPage(pageNumber);
       const rotation = (page.rotate + rotationOffset) % 360;
       const printViewport = page.getViewport({ scale: 1, rotation });
+      const printUnits = getPrintUnits(printViewport);
       const canvas = document.createElement("canvas");
       const context = canvas.getContext("2d", { alpha: false });
 

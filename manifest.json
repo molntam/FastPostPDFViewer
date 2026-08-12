@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Fast POST PDF Viewer",
-  "version": "1.0.3",
-  "description": "Displays PDF responses, including PDFs returned by POST requests, in a fast local viewer.",
+  "version": "1.0.4",
+  "description": "Displays PDFs from solutions.inet-logistics.com, including POST responses, in a fast local viewer.",
   "minimum_chrome_version": "151",
   "mime_types_handler": {
     "application/pdf": {

@@ -290,7 +290,7 @@ input:disabled {
 
 @media print {
   @page {
-    margin: 0;
+    margin: 6mm;
   }
 
   html,
