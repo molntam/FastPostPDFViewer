@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="google" content="notranslate">
+  <title>Fast PDF Viewer</title>
+  <link rel="stylesheet" href="vendor/pdf_viewer.css">
+  <link rel="stylesheet" href="viewer.css">
+</head>
+<body>
+  <header id="toolbar">
+    <div class="document-title" id="documentTitle" title="PDF document">PDF document</div>
+
+    <div class="toolbar-group page-controls" aria-label="Page controls">
+      <button id="previousPage" type="button" title="Previous page" aria-label="Previous page">Previous</button>
+      <input id="pageNumber" type="text" inputmode="numeric" value="1" aria-label="Page number">
+      <span class="page-total">of <span id="pageCount">0</span></span>
+      <button id="nextPage" type="button" title="Next page" aria-label="Next page">Next</button>
+    </div>
+
+    <div class="toolbar-group zoom-controls" aria-label="Zoom controls">
+      <button id="zoomOut" class="square-button" type="button" title="Zoom out" aria-label="Zoom out">−</button>
+      <span id="zoomValue" class="zoom-value">100%</span>
+      <button id="zoomIn" class="square-button" type="button" title="Zoom in" aria-label="Zoom in">+</button>
+      <select id="zoomMode" aria-label="Zoom mode" title="Zoom mode">
+        <option value="page-width">Fit width</option>
+        <option value="page-fit">Fit page</option>
+        <option value="auto">Automatic</option>
+        <option value="0.75">75%</option>
+        <option value="1">100%</option>
+        <option value="1.25">125%</option>
+        <option value="1.5">150%</option>
+        <option value="2">200%</option>
+        <option id="customZoom" value="custom" hidden>Custom</option>
+      </select>
+    </div>
+
+    <div class="toolbar-group action-controls" aria-label="Document actions">
+      <button id="findButton" type="button" title="Find in document">Find</button>
+      <button id="rotateButton" type="button" title="Rotate clockwise">Rotate</button>
+      <button id="downloadButton" type="button" title="Download PDF" disabled>Download</button>
+      <button id="printButton" type="button" title="Print PDF" disabled>Print</button>
+      <button id="nativeButton" type="button" title="Use the built-in Edge viewer">Edge viewer</button>
+    </div>
+  </header>
+
+  <section id="findBar" hidden aria-label="Find in document">
+    <input id="findInput" type="search" placeholder="Find in document" autocomplete="off" aria-label="Search text">
+    <span id="findResults" aria-live="polite"></span>
+    <button id="findPrevious" class="square-button" type="button" title="Previous match" aria-label="Previous match">↑</button>
+    <button id="findNext" class="square-button" type="button" title="Next match" aria-label="Next match">↓</button>
+    <button id="closeFind" class="square-button" type="button" title="Close search" aria-label="Close search">×</button>
+  </section>
+
+  <main id="viewerContainer" tabindex="0">
+    <div id="viewer" class="pdfViewer"></div>
+  </main>
+
+  <div id="busyOverlay" role="status" aria-live="polite">
+    <div class="busy-card">
+      <div class="spinner" aria-hidden="true"></div>
+      <div id="busyText">Starting PDF viewer…</div>
+      <progress id="busyProgress" max="100" hidden></progress>
+      <button id="errorFallback" type="button" hidden>Open in Edge viewer</button>
+    </div>
+  </div>
+
+  <div id="toast" role="status" aria-live="polite" hidden></div>
+  <div id="printContainer" aria-hidden="true"></div>
+
+  <script type="module" src="viewer.js"></script>
+</body>
+</html>
