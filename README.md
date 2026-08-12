@@ -1,10 +1,10 @@
-# Fast POST PDF Viewer for Microsoft Edge 151+
+# Fast POST PDF Printer for Microsoft Edge 151+
 
-This extension receives `application/pdf` responses directly from Edge's MIME-handler API. It works with PDFs returned by POST requests and single-use URLs without repeating the original request.
+This extension receives `application/pdf` responses directly from Edge's MIME-handler API and opens the Windows print dialog automatically. It works with PDFs returned by POST requests and single-use URLs without repeating the original request.
 
-Version 1.0.4 captures the one-use PDF stream before loading PDF.js, initializes the viewer with PDF.js 6 correctly and prints at up to 600 DPI with a 6 mm printer-safe margin.
+Version 1.0.5 skips the viewer, prepares every captured PDF for printing at up to 600 DPI and opens the print dialog immediately. Exact printable-area sizing prevents a one-page PDF from producing an extra blank sheet.
 
-The fast viewer only activates for PDFs whose original URL is on `https://solutions.inet-logistics.com`. PDFs from every other origin are returned to Edge's native viewer before their stream is consumed.
+The automatic printer only activates for PDFs whose original URL is on `https://solutions.inet-logistics.com`. PDFs from every other origin are returned to Edge's native viewer before their stream is consumed.
 
 ## Install
 
@@ -14,30 +14,21 @@ The fast viewer only activates for PDFs whose original URL is on `https://soluti
 4. Disable or remove the earlier **POST PDF Handler Test** extension.
 5. Select **Load unpacked**.
 6. Select the extracted `FastPostPdfViewer` folder.
-7. Open a PDF or generate the POST-based PDF in the work system.
+7. Generate the POST-based PDF in the work system. The print dialog opens automatically when preparation finishes.
 
 If an older copy is already loaded, select **Reload** on its extension card after replacing the files.
 
 Close any PDF tabs opened with the previous version before testing the updated extension. A MIME stream belongs to the tab that originally received it and cannot be reused after an extension reload.
-
-## Included controls
-
-- Fast, lazy page rendering with selectable text and working PDF links
-- Page navigation and fit-width, fit-page and percentage zoom
-- Search with `Ctrl+F`
-- Download with `Ctrl+S`
-- Print with `Ctrl+P`
-- Clockwise rotation
-- Native-viewer fallback before capture and PDF download recovery after capture
 
 ## Notes
 
 - Edge 151 or newer is required.
 - PDF.js is bundled locally; the extension makes no CDN request.
 - Printing prepares the document at up to 600 DPI, declares the PDF's physical page size and leaves a 6 mm safe margin before opening the Windows print dialog.
+- The extension has no intermediate PDF viewer. After the print dialog closes, the popup closes automatically when Edge permits it; otherwise it shows a **Close window** button.
 - The source check requires the exact HTTPS origin `https://solutions.inet-logistics.com`; HTTP, subdomains and similar-looking domains are not accepted.
 - If two extensions register for PDFs, the most recently installed one becomes the active handler.
-- A POST-generated PDF cannot be requested again as a normal GET. If rendering fails after capture, use **Download captured PDF** rather than reopening the original URL.
+- A POST-generated PDF cannot be requested again as a normal GET. If preparation fails after capture, use **Download captured PDF** rather than reopening the original URL.
 
 ## Third-party software
 
