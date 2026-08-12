@@ -30,6 +30,9 @@ const elements = {
   zoomValue: document.getElementById("zoomValue"),
 };
 
+const PDF_POINTS_PER_INCH = 72;
+const PRINT_RESOLUTION = 300;
+
 let blobUrl = null;
 let currentPhase = "starting the viewer";
 let documentBlob = null;
@@ -42,6 +45,7 @@ let pdfDocument = null;
 let pdfjsLib = null;
 let pdfViewer = null;
 let printCleanupTimer = null;
+let printPageStyleSheet = null;
 let printUrls = [];
 let printing = false;
 let streamInfo = null;
@@ -373,6 +377,12 @@ function blobFromCanvas(canvas) {
 function cleanupPrint() {
   clearTimeout(printCleanupTimer);
   printCleanupTimer = null;
+  if (printPageStyleSheet) {
+    document.adoptedStyleSheets = document.adoptedStyleSheets.filter(
+      (styleSheet) => styleSheet !== printPageStyleSheet,
+    );
+    printPageStyleSheet = null;
+  }
   for (const url of printUrls) {
     URL.revokeObjectURL(url);
   }
@@ -380,6 +390,27 @@ function cleanupPrint() {
   elements.printContainer.replaceChildren();
   printing = false;
   elements.printButton.disabled = !pdfDocument;
+}
+
+function setPrintPageSize(pageSizes) {
+  const { width, height } = pageSizes[0];
+  const hasEqualPageSizes = pageSizes.every(
+    (size) => Math.abs(size.width - width) < 0.01
+      && Math.abs(size.height - height) < 0.01,
+  );
+
+  if (!hasEqualPageSizes) {
+    console.warn("The PDF contains mixed page sizes; printing uses the first page size.");
+  }
+
+  printPageStyleSheet = new CSSStyleSheet();
+  printPageStyleSheet.replaceSync(
+    `@page { size: ${width.toFixed(3)}pt ${height.toFixed(3)}pt; margin: 0; }`,
+  );
+  document.adoptedStyleSheets = [
+    ...document.adoptedStyleSheets,
+    printPageStyleSheet,
+  ];
 }
 
 async function printDocument() {
@@ -393,8 +424,12 @@ async function printDocument() {
   const previousTitle = document.title;
 
   try {
-    const printScale = 2;
+    const printUnits = PRINT_RESOLUTION / PDF_POINTS_PER_INCH;
     const rotationOffset = pdfViewer.pagesRotation;
+    const pageSizes = [];
+    const optionalContentConfigPromise = pdfDocument.getOptionalContentConfig({
+      intent: "print",
+    });
 
     for (let pageNumber = 1; pageNumber <= pdfDocument.numPages; pageNumber += 1) {
       currentPhase = "Preparing document for printing";
@@ -405,18 +440,25 @@ async function printDocument() {
 
       const page = await pdfDocument.getPage(pageNumber);
       const rotation = (page.rotate + rotationOffset) % 360;
-      const cssViewport = page.getViewport({ scale: 1, rotation });
-      const renderViewport = page.getViewport({ scale: printScale, rotation });
+      const printViewport = page.getViewport({ scale: 1, rotation });
       const canvas = document.createElement("canvas");
       const context = canvas.getContext("2d", { alpha: false });
 
-      canvas.width = Math.ceil(renderViewport.width);
-      canvas.height = Math.ceil(renderViewport.height);
+      pageSizes.push({
+        width: printViewport.width,
+        height: printViewport.height,
+      });
+      canvas.width = Math.floor(printViewport.width * printUnits);
+      canvas.height = Math.floor(printViewport.height * printUnits);
+      context.fillStyle = "rgb(255, 255, 255)";
+      context.fillRect(0, 0, canvas.width, canvas.height);
 
       await page.render({
         canvasContext: context,
-        viewport: renderViewport,
+        transform: [printUnits, 0, 0, printUnits, 0, 0],
+        viewport: printViewport,
         intent: "print",
+        optionalContentConfigPromise,
       }).promise;
 
       const imageBlob = await blobFromCanvas(canvas);
@@ -426,8 +468,6 @@ async function printDocument() {
 
       printUrls.push(imageUrl);
       wrapper.className = "print-page";
-      wrapper.style.width = `${cssViewport.width / 72}in`;
-      wrapper.style.height = `${cssViewport.height / 72}in`;
       image.src = imageUrl;
       image.alt = `Page ${pageNumber}`;
       wrapper.append(image);
@@ -438,9 +478,10 @@ async function printDocument() {
       canvas.height = 1;
     }
 
+    setPrintPageSize(pageSizes);
     clearBusy();
     document.title = documentName;
-    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    await new Promise((resolve) => setTimeout(resolve, 0));
     window.print();
   } catch (error) {
     clearBusy();

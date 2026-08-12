@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Fast POST PDF Viewer",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Displays PDF responses, including PDFs returned by POST requests, in a fast local viewer.",
   "minimum_chrome_version": "151",
   "mime_types_handler": {
