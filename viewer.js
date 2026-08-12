@@ -20,7 +20,6 @@ let documentName = "document.pdf";
 let pdfDocument = null;
 let printFinished = false;
 let printPageStyleSheet = null;
-let printUrls = [];
 let streamInfo = null;
 
 function setBusy(message, progress = null) {
@@ -261,18 +260,6 @@ async function loadPdf(buffer) {
   return loadingTask.promise;
 }
 
-function blobFromCanvas(canvas) {
-  return new Promise((resolve, reject) => {
-    canvas.toBlob((blob) => {
-      if (blob) {
-        resolve(blob);
-      } else {
-        reject(new Error("A print page could not be prepared"));
-      }
-    }, "image/png");
-  });
-}
-
 function getPrintUnits(viewport) {
   const requestedUnits = PRINT_RESOLUTION / PDF_POINTS_PER_INCH;
   const pixelLimitUnits = Math.sqrt(
@@ -328,6 +315,12 @@ async function preparePrintPages() {
       1,
       viewport.height * MM_PER_POINT - 2 * PRINT_SAFE_MARGIN_MM - PRINT_LAYOUT_EPSILON_MM,
     );
+    const sourceWidth = viewport.width * MM_PER_POINT;
+    const sourceHeight = viewport.height * MM_PER_POINT;
+    const displayScale = Math.min(
+      contentWidth / sourceWidth,
+      contentHeight / sourceHeight,
+    );
 
     pageSizes.push({ width: viewport.width, height: viewport.height });
     canvas.width = Math.floor(viewport.width * printUnits);
@@ -343,23 +336,15 @@ async function preparePrintPages() {
       optionalContentConfigPromise,
     }).promise;
 
-    const imageBlob = await blobFromCanvas(canvas);
-    const imageUrl = URL.createObjectURL(imageBlob);
     const wrapper = document.createElement("div");
-    const image = document.createElement("img");
 
-    printUrls.push(imageUrl);
     wrapper.className = "print-page";
     wrapper.style.width = `${contentWidth.toFixed(3)}mm`;
     wrapper.style.height = `${contentHeight.toFixed(3)}mm`;
-    image.src = imageUrl;
-    image.alt = `Page ${pageNumber}`;
-    wrapper.append(image);
+    canvas.style.width = `${(sourceWidth * displayScale).toFixed(3)}mm`;
+    canvas.style.height = `${(sourceHeight * displayScale).toFixed(3)}mm`;
+    wrapper.append(canvas);
     elements.printContainer.append(wrapper);
-    await image.decode();
-
-    canvas.width = 1;
-    canvas.height = 1;
   }
 
   setPrintPageSize(pageSizes);
@@ -372,10 +357,7 @@ function cleanup() {
     );
     printPageStyleSheet = null;
   }
-  for (const url of printUrls) {
-    URL.revokeObjectURL(url);
-  }
-  printUrls = [];
+  elements.printContainer.replaceChildren();
   if (blobUrl) {
     URL.revokeObjectURL(blobUrl);
     blobUrl = null;

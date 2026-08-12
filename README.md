@@ -2,7 +2,7 @@
 
 This extension receives `application/pdf` responses directly from Edge's MIME-handler API and opens the Windows print dialog automatically. It works with PDFs returned by POST requests and single-use URLs without repeating the original request.
 
-Version 1.0.5 skips the viewer, prepares every captured PDF for printing at up to 600 DPI and opens the print dialog immediately. Exact printable-area sizing prevents a one-page PDF from producing an extra blank sheet.
+Version 1.0.6 skips the viewer, renders every captured PDF directly to a print canvas at up to 600 DPI and opens the print dialog immediately. It removes the lossless PNG encode/decode round trip while preserving the same pixel resolution and exact printable-area sizing.
 
 The automatic printer only activates for PDFs whose original URL is on `https://solutions.inet-logistics.com`. PDFs from every other origin are returned to Edge's native viewer before their stream is consumed.
 

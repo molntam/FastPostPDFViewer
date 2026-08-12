@@ -124,11 +124,8 @@ button {
     page-break-before: always;
   }
 
-  .print-page img {
+  .print-page canvas {
     display: block;
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
     print-color-adjust: exact;
   }
 }
