@@ -9,6 +9,7 @@ const elements = {
 const PDF_POINTS_PER_INCH = 72;
 const MM_PER_POINT = 25.4 / PDF_POINTS_PER_INCH;
 const PRINT_RESOLUTION = 600;
+const PRINT_ROTATION_DEGREES = 180;
 const MAX_PRINT_PIXELS = 40000000;
 const PRINT_SAFE_MARGIN_MM = 6;
 const PRINT_LAYOUT_EPSILON_MM = 0.2;
@@ -268,6 +269,14 @@ function getPrintUnits(viewport) {
   return Math.min(requestedUnits, pixelLimitUnits);
 }
 
+function convertCanvasToGrayscale(context, width, height) {
+  context.save();
+  context.globalCompositeOperation = "saturation";
+  context.fillStyle = "rgb(0, 0, 0)";
+  context.fillRect(0, 0, width, height);
+  context.restore();
+}
+
 function setPrintPageSize(pageSizes) {
   const { width, height } = pageSizes[0];
   const hasEqualPageSizes = pageSizes.every(
@@ -303,7 +312,8 @@ async function preparePrintPages() {
     );
 
     const page = await pdfDocument.getPage(pageNumber);
-    const viewport = page.getViewport({ scale: 1 });
+    const rotation = (page.rotate + PRINT_ROTATION_DEGREES + 360) % 360;
+    const viewport = page.getViewport({ scale: 1, rotation });
     const printUnits = getPrintUnits(viewport);
     const canvas = document.createElement("canvas");
     const context = canvas.getContext("2d", { alpha: false });
@@ -335,6 +345,7 @@ async function preparePrintPages() {
       intent: "print",
       optionalContentConfigPromise,
     }).promise;
+    convertCanvasToGrayscale(context, canvas.width, canvas.height);
 
     const wrapper = document.createElement("div");
 

@@ -2,7 +2,7 @@
 
 This extension receives `application/pdf` responses directly from Edge's MIME-handler API and opens the Windows print dialog automatically. It works with PDFs returned by POST requests and single-use URLs without repeating the original request.
 
-Version 1.0.6 skips the viewer, renders every captured PDF directly to a print canvas at up to 600 DPI and opens the print dialog immediately. It removes the lossless PNG encode/decode round trip while preserving the same pixel resolution and exact printable-area sizing.
+Version 1.0.7 skips the viewer, renders every captured PDF directly to a print canvas at up to 600 DPI and opens the print dialog immediately. Each page receives an additional 180-degree rotation and is converted to grayscale on the canvas before Edge builds the print preview.
 
 The automatic printer only activates for PDFs whose original URL is on `https://solutions.inet-logistics.com`. PDFs from every other origin are returned to Edge's native viewer before their stream is consumed.
 
@@ -25,6 +25,8 @@ Close any PDF tabs opened with the previous version before testing the updated e
 - Edge 151 or newer is required.
 - PDF.js is bundled locally; the extension makes no CDN request.
 - Printing prepares the document at up to 600 DPI, declares the PDF's physical page size and leaves a 6 mm safe margin before opening the Windows print dialog.
+- Every page receives an additional 180-degree rotation to correct the upside-down source output.
+- Printed canvas content is permanently converted to grayscale. Edge may still display its normal color selector because extensions cannot lock printer-driver settings.
 - The extension has no intermediate PDF viewer. After the print dialog closes, the popup closes automatically when Edge permits it; otherwise it shows a **Close window** button.
 - The source check requires the exact HTTPS origin `https://solutions.inet-logistics.com`; HTTP, subdomains and similar-looking domains are not accepted.
 - If two extensions register for PDFs, the most recently installed one becomes the active handler.
