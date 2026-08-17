@@ -4,20 +4,18 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="google" content="notranslate">
-  <title>Preparing print</title>
+  <title>Preparing native print</title>
   <link rel="stylesheet" href="viewer.css">
 </head>
 <body>
   <div id="busyOverlay" role="status" aria-live="polite">
     <div class="busy-card">
       <div class="spinner" aria-hidden="true"></div>
-      <div id="busyText">Preparing print…</div>
+      <div id="busyText">Preparing native print…</div>
       <progress id="busyProgress" max="100" hidden></progress>
       <button id="errorFallback" type="button" hidden>Open in Edge viewer</button>
     </div>
   </div>
-
-  <div id="printContainer" aria-hidden="true"></div>
 
   <script type="module" src="viewer.js"></script>
 </body>

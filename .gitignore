@@ -3,3 +3,5 @@
 *.pem
 .DS_Store
 Thumbs.db
+native-host/*.exe
+native-host/*.pdb

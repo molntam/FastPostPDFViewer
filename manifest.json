@@ -1,16 +1,17 @@
 {
   "manifest_version": 3,
-  "name": "Fast POST PDF Printer",
-  "version": "1.0.5",
-  "description": "Opens PDFs from solutions.inet-logistics.com, including POST responses, directly in the print dialog.",
+  "name": "Fast POST PDF PPM Printer",
+  "version": "1.1.0",
+  "description": "Sends original POST-generated PDFs from solutions.inet-logistics.com to Windows Personal Print Manager queues without browser rasterization.",
   "minimum_chrome_version": "151",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAolmDcfl81F3RyESAIbe2qPq+32tEBNUISzEtkFbXJPWSL++bImlFBoX9b84arm7g76EDh5znvhaGNq6dHpWNn/aIsjS6dWTxuVaG+36i5EVdG6xp4HP6UWpv4Bkv7wK226PksH8DxbFO87gzGmWBOroCQ6Hfhc4z2oa4hRh32PUebH5OefJ3E2XuAUY2OM+8Xfevat8MN0rewgaxfBwxn+YeUAHYWcTKPZ0Eca0ax+UlXuODKeVNjvxh2LlVxE7/WYzwGT0+ykZeangcZ+2O0hItbAJPtKUWKQXoT3c5LE2DZ7gzXLnoXgJQEnX3khFB92ZS3daxZ6FIxHZNds+3sQIDAQAB",
+  "permissions": [
+    "nativeMessaging"
+  ],
   "mime_types_handler": {
     "application/pdf": {
       "handler_url": "viewer.html",
       "can_embed": true
     }
-  },
-  "content_security_policy": {
-    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
   }
 }

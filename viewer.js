@@ -3,24 +3,16 @@ const elements = {
   busyProgress: document.getElementById("busyProgress"),
   busyText: document.getElementById("busyText"),
   errorFallback: document.getElementById("errorFallback"),
-  printContainer: document.getElementById("printContainer"),
 };
 
-const PDF_POINTS_PER_INCH = 72;
-const MM_PER_POINT = 25.4 / PDF_POINTS_PER_INCH;
-const PRINT_RESOLUTION = 600;
-const MAX_PRINT_PIXELS = 40000000;
-const PRINT_SAFE_MARGIN_MM = 6;
-const PRINT_LAYOUT_EPSILON_MM = 0.2;
 const ALLOWED_PDF_ORIGIN = "https://solutions.inet-logistics.com";
+const NATIVE_HOST_NAME = "com.molntam.fast_post_pdf_printer";
+const MAX_PDF_BYTES = 128 * 1024 * 1024;
 
 let blobUrl = null;
-let currentPhase = "preparing the print";
+let currentPhase = "preparing the print job";
 let documentName = "document.pdf";
-let pdfDocument = null;
 let printFinished = false;
-let printPageStyleSheet = null;
-let printUrls = [];
 let streamInfo = null;
 
 function setBusy(message, progress = null) {
@@ -40,28 +32,54 @@ function setBusy(message, progress = null) {
 
 function setPhase(phase, progress = null) {
   currentPhase = phase;
-  setBusy(`${phase}…`, progress);
+  setBusy(phase + "…", progress);
+}
+
+function normalizeNativeHostError(error) {
+  const value = error instanceof Error ? error : new Error(String(error));
+  const message = value.message.toLowerCase();
+
+  if (message.includes("native messaging host") || message.includes("native host")) {
+    return new Error(
+      "The Windows printing bridge is not installed or is unavailable. Run native-host\\install.ps1, reload the extension, and try again.",
+    );
+  }
+
+  return value;
 }
 
 function showError(error) {
-  const value = error instanceof Error ? error : new Error(String(error));
+  const value = normalizeNativeHostError(error);
   console.error(value);
   elements.busyOverlay.hidden = false;
   elements.busyOverlay.querySelector(".busy-card").classList.add("error");
-  elements.busyText.textContent = `Stopped while ${currentPhase.toLowerCase()}: ${value.name}: ${value.message}`;
+  elements.busyText.textContent = "Stopped while " + currentPhase.toLowerCase()
+    + ": " + value.name + ": " + value.message;
   elements.busyProgress.hidden = true;
-  elements.errorFallback.textContent = blobUrl ? "Download captured PDF" : "Open in Edge viewer";
+  elements.errorFallback.textContent = blobUrl
+    ? "Download captured PDF"
+    : "Open in Edge viewer";
+  elements.errorFallback.hidden = false;
+}
+
+function setDone(message) {
+  printFinished = true;
+  elements.busyOverlay.hidden = false;
+  elements.busyOverlay.querySelector(".busy-card").classList.add("done");
+  elements.busyText.textContent = message;
+  elements.busyProgress.hidden = true;
+  elements.errorFallback.textContent = "Close window";
   elements.errorFallback.hidden = false;
 }
 
 function formatBytes(bytes) {
   if (bytes < 1024) {
-    return `${bytes} B`;
+    return bytes + " B";
   }
   if (bytes < 1024 * 1024) {
-    return `${(bytes / 1024).toFixed(0)} KB`;
+    return (bytes / 1024).toFixed(0) + " KB";
   }
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return (bytes / (1024 * 1024)).toFixed(1) + " MB";
 }
 
 function getResponseHeader(headers, name) {
@@ -79,7 +97,7 @@ function getResponseHeader(headers, name) {
 function sanitizeFilename(value) {
   const cleaned = value.replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_").trim();
   const filename = cleaned || "document.pdf";
-  return filename.toLowerCase().endsWith(".pdf") ? filename : `${filename}.pdf`;
+  return filename.toLowerCase().endsWith(".pdf") ? filename : filename + ".pdf";
 }
 
 function filenameFromDisposition(disposition) {
@@ -155,7 +173,11 @@ function handleRecovery() {
 
 async function readStreamResponse(response) {
   if (!response.body?.getReader) {
-    return response.arrayBuffer();
+    const buffer = await response.arrayBuffer();
+    if (buffer.byteLength > MAX_PDF_BYTES) {
+      throw new Error("The PDF exceeds the 128 MB native-printing limit");
+    }
+    return buffer;
   }
 
   const reader = response.body.getReader();
@@ -165,6 +187,10 @@ async function readStreamResponse(response) {
     || 0;
   let received = 0;
 
+  if (declaredLength > MAX_PDF_BYTES) {
+    throw new Error("The PDF exceeds the 128 MB native-printing limit");
+  }
+
   while (true) {
     const { done, value } = await reader.read();
     if (done) {
@@ -173,11 +199,16 @@ async function readStreamResponse(response) {
 
     chunks.push(value);
     received += value.byteLength;
+    if (received > MAX_PDF_BYTES) {
+      await reader.cancel();
+      throw new Error("The PDF exceeds the 128 MB native-printing limit");
+    }
+
     if (declaredLength) {
       const percent = received / declaredLength * 100;
-      setBusy(`Receiving PDF… ${Math.min(100, Math.round(percent))}%`, percent);
+      setBusy("Receiving PDF… " + Math.min(100, Math.round(percent)) + "%", percent);
     } else {
-      setBusy(`Receiving PDF… ${formatBytes(received)}`);
+      setBusy("Receiving PDF… " + formatBytes(received));
     }
   }
 
@@ -188,6 +219,27 @@ async function readStreamResponse(response) {
     offset += chunk.byteLength;
   }
   return bytes.buffer;
+}
+
+function validatePdf(buffer) {
+  const bytes = new Uint8Array(buffer);
+  const signature = [0x25, 0x50, 0x44, 0x46, 0x2d];
+  const searchLength = Math.min(bytes.length, 1024);
+
+  for (let offset = 0; offset <= searchLength - signature.length; offset += 1) {
+    let match = true;
+    for (let index = 0; index < signature.length; index += 1) {
+      if (bytes[offset + index] !== signature[index]) {
+        match = false;
+        break;
+      }
+    }
+    if (match) {
+      return;
+    }
+  }
+
+  throw new Error("The captured response does not contain a valid PDF header");
 }
 
 async function capturePdfStream() {
@@ -201,7 +253,7 @@ async function capturePdfStream() {
   if (!isAllowedSourceUrl(streamInfo.originalUrl)) {
     setPhase("Opening PDF in Edge viewer");
     await chrome.mimeHandler.abortAndFallbackToNativeHandler();
-    return new Promise(() => {});
+    return null;
   }
 
   documentName = resolveDocumentName(streamInfo);
@@ -210,7 +262,8 @@ async function capturePdfStream() {
 
   const slowStreamTimer = setTimeout(() => {
     if (currentPhase === "Receiving PDF") {
-      elements.busyText.textContent = "Edge has not released the PDF stream yet. You can wait or use the Edge viewer fallback.";
+      elements.busyText.textContent =
+        "Edge has not released the PDF stream yet. You can wait or use the Edge viewer fallback.";
       elements.errorFallback.hidden = false;
     }
   }, 12000);
@@ -218,7 +271,7 @@ async function capturePdfStream() {
   try {
     const response = await fetch(streamInfo.streamUrl);
     if (!response.ok) {
-      throw new Error(`The PDF stream returned HTTP ${response.status}`);
+      throw new Error("The PDF stream returned HTTP " + response.status);
     }
     return await readStreamResponse(response);
   } finally {
@@ -226,191 +279,113 @@ async function capturePdfStream() {
   }
 }
 
-async function loadPdf(buffer) {
-  setPhase("Parsing PDF", 0);
-  const pdfjsLib = await import("./vendor/pdf.min.mjs");
-  pdfjsLib.GlobalWorkerOptions.workerSrc = chrome.runtime.getURL(
-    "vendor/pdf.worker.min.mjs",
-  );
-
-  const loadingTask = pdfjsLib.getDocument({
-    data: new Uint8Array(buffer.slice(0)),
-    cMapUrl: chrome.runtime.getURL("vendor/cmaps/"),
-    cMapPacked: true,
-    standardFontDataUrl: chrome.runtime.getURL("vendor/standard_fonts/"),
-    wasmUrl: chrome.runtime.getURL("vendor/wasm/"),
-    enableXfa: true,
-    isEvalSupported: false,
-    useSystemFonts: true,
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error || new Error("The PDF could not be encoded"));
+    reader.onload = () => {
+      const value = String(reader.result || "");
+      const separator = value.indexOf(",");
+      if (separator < 0) {
+        reject(new Error("The PDF could not be encoded"));
+        return;
+      }
+      resolve(value.slice(separator + 1));
+    };
+    reader.readAsDataURL(blob);
   });
+}
 
-  loadingTask.onProgress = ({ loaded, total }) => {
-    const percent = total ? loaded / total * 100 : null;
-    setBusy("Parsing PDF…", percent);
-  };
+function sendToNativePrinter(payload) {
+  return new Promise((resolve, reject) => {
+    let port;
+    let settled = false;
 
-  loadingTask.onPassword = (updatePassword) => {
-    const password = window.prompt("Enter the password for this PDF:");
-    if (password === null) {
-      loadingTask.destroy();
+    function complete(callback, value) {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      callback(value);
+      try {
+        port?.disconnect();
+      } catch {
+        // The native host already closed.
+      }
+    }
+
+    try {
+      port = chrome.runtime.connectNative(NATIVE_HOST_NAME);
+    } catch (error) {
+      reject(error);
       return;
     }
-    updatePassword(password);
-  };
 
-  return loadingTask.promise;
-}
-
-function blobFromCanvas(canvas) {
-  return new Promise((resolve, reject) => {
-    canvas.toBlob((blob) => {
-      if (blob) {
-        resolve(blob);
-      } else {
-        reject(new Error("A print page could not be prepared"));
+    port.onMessage.addListener((response) => {
+      if (response?.ok || response?.cancelled) {
+        complete(resolve, response);
+        return;
       }
-    }, "image/png");
+      complete(reject, new Error(response?.error || "The native printer rejected the job"));
+    });
+
+    port.onDisconnect.addListener(() => {
+      if (settled) {
+        return;
+      }
+      const message = chrome.runtime.lastError?.message
+        || "The native printing bridge closed before returning a result";
+      complete(reject, new Error(message));
+    });
+
+    try {
+      port.postMessage(payload);
+    } catch (error) {
+      complete(reject, error);
+    }
   });
-}
-
-function getPrintUnits(viewport) {
-  const requestedUnits = PRINT_RESOLUTION / PDF_POINTS_PER_INCH;
-  const pixelLimitUnits = Math.sqrt(
-    MAX_PRINT_PIXELS / (viewport.width * viewport.height),
-  );
-  return Math.min(requestedUnits, pixelLimitUnits);
-}
-
-function setPrintPageSize(pageSizes) {
-  const { width, height } = pageSizes[0];
-  const hasEqualPageSizes = pageSizes.every(
-    (size) => Math.abs(size.width - width) < 0.01
-      && Math.abs(size.height - height) < 0.01,
-  );
-
-  if (!hasEqualPageSizes) {
-    console.warn("The PDF contains mixed page sizes; printing uses the first page size.");
-  }
-
-  printPageStyleSheet = new CSSStyleSheet();
-  printPageStyleSheet.replaceSync(
-    `@page { size: ${width.toFixed(3)}pt ${height.toFixed(3)}pt; margin: ${PRINT_SAFE_MARGIN_MM}mm; }`,
-  );
-  document.adoptedStyleSheets = [
-    ...document.adoptedStyleSheets,
-    printPageStyleSheet,
-  ];
-}
-
-async function preparePrintPages() {
-  const pageSizes = [];
-  const optionalContentConfigPromise = pdfDocument.getOptionalContentConfig({
-    intent: "print",
-  });
-
-  for (let pageNumber = 1; pageNumber <= pdfDocument.numPages; pageNumber += 1) {
-    currentPhase = "Preparing document for printing";
-    setBusy(
-      `Preparing print page ${pageNumber} of ${pdfDocument.numPages}`,
-      (pageNumber - 1) / pdfDocument.numPages * 100,
-    );
-
-    const page = await pdfDocument.getPage(pageNumber);
-    const viewport = page.getViewport({ scale: 1 });
-    const printUnits = getPrintUnits(viewport);
-    const canvas = document.createElement("canvas");
-    const context = canvas.getContext("2d", { alpha: false });
-    const contentWidth = Math.max(
-      1,
-      viewport.width * MM_PER_POINT - 2 * PRINT_SAFE_MARGIN_MM - PRINT_LAYOUT_EPSILON_MM,
-    );
-    const contentHeight = Math.max(
-      1,
-      viewport.height * MM_PER_POINT - 2 * PRINT_SAFE_MARGIN_MM - PRINT_LAYOUT_EPSILON_MM,
-    );
-
-    pageSizes.push({ width: viewport.width, height: viewport.height });
-    canvas.width = Math.floor(viewport.width * printUnits);
-    canvas.height = Math.floor(viewport.height * printUnits);
-    context.fillStyle = "rgb(255, 255, 255)";
-    context.fillRect(0, 0, canvas.width, canvas.height);
-
-    await page.render({
-      canvasContext: context,
-      transform: [printUnits, 0, 0, printUnits, 0, 0],
-      viewport,
-      intent: "print",
-      optionalContentConfigPromise,
-    }).promise;
-
-    const imageBlob = await blobFromCanvas(canvas);
-    const imageUrl = URL.createObjectURL(imageBlob);
-    const wrapper = document.createElement("div");
-    const image = document.createElement("img");
-
-    printUrls.push(imageUrl);
-    wrapper.className = "print-page";
-    wrapper.style.width = `${contentWidth.toFixed(3)}mm`;
-    wrapper.style.height = `${contentHeight.toFixed(3)}mm`;
-    image.src = imageUrl;
-    image.alt = `Page ${pageNumber}`;
-    wrapper.append(image);
-    elements.printContainer.append(wrapper);
-    await image.decode();
-
-    canvas.width = 1;
-    canvas.height = 1;
-  }
-
-  setPrintPageSize(pageSizes);
 }
 
 function cleanup() {
-  if (printPageStyleSheet) {
-    document.adoptedStyleSheets = document.adoptedStyleSheets.filter(
-      (styleSheet) => styleSheet !== printPageStyleSheet,
-    );
-    printPageStyleSheet = null;
-  }
-  for (const url of printUrls) {
-    URL.revokeObjectURL(url);
-  }
-  printUrls = [];
   if (blobUrl) {
     URL.revokeObjectURL(blobUrl);
     blobUrl = null;
   }
-  pdfDocument?.destroy();
-  pdfDocument = null;
-}
-
-function finishPrint() {
-  if (printFinished) {
-    return;
-  }
-
-  printFinished = true;
-  cleanup();
-  elements.busyOverlay.querySelector(".busy-card").classList.add("done");
-  elements.busyText.textContent = "Print dialog closed. You can close this window.";
-  elements.busyProgress.hidden = true;
-  elements.errorFallback.textContent = "Close window";
-  elements.errorFallback.hidden = false;
-  elements.busyOverlay.hidden = false;
-  window.close();
 }
 
 async function startPrint() {
   const buffer = await capturePdfStream();
-  blobUrl = URL.createObjectURL(new Blob([buffer], { type: "application/pdf" }));
-  pdfDocument = await loadPdf(buffer);
-  await preparePrintPages();
-  elements.busyOverlay.hidden = true;
-  await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-  window.print();
+  if (!buffer) {
+    return;
+  }
+
+  validatePdf(buffer);
+  const pdfBlob = new Blob([buffer], { type: "application/pdf" });
+  blobUrl = URL.createObjectURL(pdfBlob);
+
+  setPhase("Sending original PDF to Personal Print Manager", 100);
+  const response = await sendToNativePrinter({
+    action: "printPdf",
+    fileName: documentName,
+    sourceUrl: streamInfo.originalUrl,
+    pdfBase64: await blobToBase64(pdfBlob),
+  });
+
+  if (response.cancelled) {
+    setDone("Printing cancelled. You can close this window.");
+    window.close();
+    return;
+  }
+
+  const printerName = response.printerName || "the selected printer";
+  const jobCount = Array.isArray(response.jobIds) ? response.jobIds.length : 1;
+  setDone(
+    "Original PDF sent to " + printerName + " as "
+      + jobCount + (jobCount === 1 ? " print job." : " print jobs."),
+  );
+  window.close();
 }
 
 elements.errorFallback.addEventListener("click", handleRecovery);
-window.addEventListener("afterprint", finishPrint);
 window.addEventListener("unload", cleanup);
 startPrint().catch(showError);
