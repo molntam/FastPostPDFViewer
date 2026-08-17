@@ -30,3 +30,6 @@ jobs:
           if (Select-String -Path viewer.js -Pattern "pdf.min.mjs|canvas|connectNative") {
             throw "The no-host branch must not use PDF.js, canvas or native messaging."
           }
+          if (-not (Select-String -Path viewer.js -SimpleMatch "window.print()")) {
+            throw "The no-host branch must use the browser print command."
+          }

@@ -23,7 +23,7 @@ It does not parse, resize or rasterize the PDF through PDF.js or canvas. The sel
             v
     Selected PPM-installed printer
 
-The extension's loading screen stays over the embedded viewer. When Edge reports that the PDF is ready, the extension sends the viewer its print command. If automatic printing is blocked, the recovery controls can retry the command, reveal the Edge viewer or download the captured PDF.
+The extension's loading screen stays over the embedded viewer. Once the PDF frame is ready, the extension hides the overlay and calls the browser's print command. It first targets the PDF frame and falls back to printing the full-page host document when Edge isolates the Adobe viewer. Print-only styling removes the extension overlay from the job. Recovery controls can retry the command, reveal the Edge viewer or download the captured PDF.
 
 ## Install
 
@@ -45,11 +45,11 @@ If an older copy of this folder is already loaded, select **Reload** on its exte
 - The original PDF is used as the print source; the extension creates no page images.
 - PPM routing occurs after a PPM-installed printer is selected in Edge's print dialog.
 - Edge and the Windows printer driver still control the final spool format and device rendering.
-- If the automatic command does not open the dialog, select **Open print dialog** or **Show Edge viewer**.
+- If the automatic command does not open a usable dialog, select **Open print dialog** or **Show Edge viewer**. The latter exposes Edge's real PDF toolbar and its print button.
 
 ## Why this is a trial
 
-Windows Edge extensions do not have an API for submitting a PDF directly to an installed printer. This version instead uses the scripting interface exposed by Edge's embedded PDF viewer. The interface is inherited from Chromium, but Microsoft can change the Adobe-backed viewer integration independently. Test the exact label and document types used at work before replacing the current extension.
+Windows Edge extensions do not have an API for submitting a PDF directly to an installed printer. Edge's Adobe-backed viewer ignored the Chromium embedded-viewer print message in testing, so this version instead invokes the browser print command against the loaded PDF frame or its full-page host. Test the exact label and document types used at work before replacing the current extension.
 
 ## Repository note
 

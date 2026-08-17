@@ -19,6 +19,7 @@ let currentPhase = "preparing the print";
 let documentName = "document.pdf";
 let frameLoadSequence = 0;
 let pdfFrameStarted = false;
+let printInProgress = false;
 let printedSequence = -1;
 let recoveryTimer = null;
 let streamInfo = null;
@@ -290,19 +291,46 @@ function postToPdfViewer(message) {
   elements.pdfFrame.contentWindow?.postMessage(message, "*");
 }
 
-function requestPrint(sequence, force = false) {
-  if (sequence !== frameLoadSequence || (!force && printedSequence === sequence)) {
+function nextPaint() {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(resolve));
+  });
+}
+
+async function requestPrint(sequence, force = false) {
+  if (
+    sequence !== frameLoadSequence
+    || printInProgress
+    || (!force && printedSequence === sequence)
+  ) {
     return;
   }
 
   printedSequence = sequence;
-  setPhase("Opening Edge print dialog", 100);
-  postToPdfViewer({ type: "print" });
-
+  printInProgress = true;
   clearTimeout(recoveryTimer);
-  recoveryTimer = setTimeout(() => {
-    showActions("If the print dialog did not open, try again or show the Edge viewer.");
-  }, RECOVERY_DELAY_MS);
+  currentPhase = "opening the browser print dialog";
+  elements.busyOverlay.hidden = true;
+  elements.pdfFrame.focus();
+  await nextPaint();
+
+  try {
+    try {
+      const frameWindow = elements.pdfFrame.contentWindow;
+      if (!frameWindow) {
+        throw new Error("The PDF frame is unavailable");
+      }
+      frameWindow.print();
+    } catch (error) {
+      console.info("Direct PDF-frame printing was unavailable; printing the host page.", error);
+      window.print();
+    }
+  } finally {
+    printInProgress = false;
+    showActions(
+      "Print dialog closed. If its preview was not correct, show the Edge viewer and use its print button.",
+    );
+  }
 }
 
 function handlePdfFrameLoad() {
@@ -315,7 +343,7 @@ function handlePdfFrameLoad() {
   postToPdfViewer({ type: "getSelectedText" });
 
   setTimeout(() => {
-    requestPrint(sequence);
+    requestPrint(sequence).catch(showError);
   }, AUTO_PRINT_DELAY_MS);
 }
 
@@ -324,7 +352,7 @@ function handlePdfViewerMessage(event) {
     return;
   }
 
-  requestPrint(frameLoadSequence);
+  requestPrint(frameLoadSequence).catch(showError);
 }
 
 async function showEmbeddedViewer() {
@@ -364,7 +392,9 @@ async function startPrint() {
 }
 
 elements.pdfFrame.addEventListener("load", handlePdfFrameLoad);
-elements.retryPrint.addEventListener("click", () => requestPrint(frameLoadSequence, true));
+elements.retryPrint.addEventListener("click", () => {
+  requestPrint(frameLoadSequence, true).catch(showError);
+});
 elements.openViewer.addEventListener("click", () => showEmbeddedViewer().catch(showError));
 elements.downloadPdf.addEventListener("click", downloadCapturedPdf);
 window.addEventListener("message", handlePdfViewerMessage);
