@@ -11,7 +11,6 @@ const elements = {
 
 const ALLOWED_PDF_ORIGIN = "https://solutions.inet-logistics.com";
 const MAX_PDF_BYTES = 128 * 1024 * 1024;
-const AUTO_PRINT_DELAY_MS = 750;
 const RECOVERY_DELAY_MS = 12000;
 
 let blobUrl = null;
@@ -23,6 +22,8 @@ let printInProgress = false;
 let printedSequence = -1;
 let recoveryTimer = null;
 let streamInfo = null;
+let warmupFrame = null;
+let warmupUrl = null;
 
 function setBusy(message, progress = null) {
   elements.busyOverlay.hidden = false;
@@ -77,6 +78,54 @@ function formatBytes(bytes) {
     return (bytes / 1024).toFixed(0) + " KB";
   }
   return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+}
+
+function createWarmupPdf() {
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 1 1] /Resources << >> >>",
+  ];
+  const offsets = [];
+  let pdf = "%PDF-1.4\n";
+
+  objects.forEach((object, index) => {
+    offsets.push(pdf.length);
+    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  });
+
+  const xrefOffset = pdf.length;
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (const offset of offsets) {
+    pdf += String(offset).padStart(10, "0") + " 00000 n \n";
+  }
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\n`;
+  pdf += `startxref\n${xrefOffset}\n%%EOF\n`;
+
+  return new Blob([pdf], { type: "application/pdf" });
+}
+
+function startPdfViewerWarmup() {
+  if (warmupFrame) {
+    return;
+  }
+
+  warmupUrl = URL.createObjectURL(createWarmupPdf());
+  warmupFrame = document.createElement("iframe");
+  warmupFrame.id = "pdfWarmup";
+  warmupFrame.title = "";
+  warmupFrame.setAttribute("aria-hidden", "true");
+  warmupFrame.src = warmupUrl;
+  document.body.appendChild(warmupFrame);
+}
+
+function stopPdfViewerWarmup() {
+  warmupFrame?.remove();
+  warmupFrame = null;
+  if (warmupUrl) {
+    URL.revokeObjectURL(warmupUrl);
+    warmupUrl = null;
+  }
 }
 
 function getResponseHeader(headers, name) {
@@ -139,32 +188,19 @@ function isAllowedSourceUrl(value) {
   }
 }
 
-function isOwnEmbeddedBlob(info) {
-  if (!info.embedded || !info.originalUrl.startsWith("blob:")) {
-    return false;
-  }
-
-  try {
-    return new URL(info.originalUrl.slice(5)).origin === location.origin;
-  } catch {
-    return false;
-  }
-}
-
 async function fallbackToEdge(info) {
-  if (isOwnEmbeddedBlob(info)) {
-    const response = await fetch(info.streamUrl);
-    if (!response.ok) {
-      throw new Error("The embedded PDF stream returned HTTP " + response.status);
+  const response = await fetch(info.streamUrl);
+  if (!response.ok) {
+    throw new Error("The PDF stream returned HTTP " + response.status);
+  }
+  if (response.body?.getReader) {
+    const reader = response.body.getReader();
+    let done = false;
+    while (!done) {
+      ({ done } = await reader.read());
     }
-    if (response.body?.getReader) {
-      const reader = response.body.getReader();
-      while (!(await reader.read()).done) {
-        // Drain the stream so Edge can replay its cached body in the built-in viewer.
-      }
-    } else {
-      await response.arrayBuffer();
-    }
+  } else {
+    await response.arrayBuffer();
   }
 
   await chrome.mimeHandler.abortAndFallbackToNativeHandler();
@@ -255,6 +291,7 @@ async function capturePdfStream() {
     return null;
   }
 
+  startPdfViewerWarmup();
   documentName = resolveDocumentName(streamInfo);
   document.title = documentName;
   setPhase("Receiving PDF");
@@ -285,10 +322,6 @@ function downloadCapturedPdf() {
   link.href = blobUrl;
   link.download = documentName;
   link.click();
-}
-
-function postToPdfViewer(message) {
-  elements.pdfFrame.contentWindow?.postMessage(message, "*");
 }
 
 function nextPaint() {
@@ -338,21 +371,10 @@ function handlePdfFrameLoad() {
     return;
   }
 
+  stopPdfViewerWarmup();
   frameLoadSequence += 1;
   const sequence = frameLoadSequence;
-  postToPdfViewer({ type: "getSelectedText" });
-
-  setTimeout(() => {
-    requestPrint(sequence).catch(showError);
-  }, AUTO_PRINT_DELAY_MS);
-}
-
-function handlePdfViewerMessage(event) {
-  if (event.source !== elements.pdfFrame.contentWindow || event.data?.type !== "documentLoaded") {
-    return;
-  }
-
-  requestPrint(frameLoadSequence).catch(showError);
+  requestPrint(sequence).catch(showError);
 }
 
 async function showEmbeddedViewer() {
@@ -372,6 +394,7 @@ async function showEmbeddedViewer() {
 
 function cleanup() {
   clearTimeout(recoveryTimer);
+  stopPdfViewerWarmup();
   if (blobUrl) {
     URL.revokeObjectURL(blobUrl);
     blobUrl = null;
@@ -397,6 +420,5 @@ elements.retryPrint.addEventListener("click", () => {
 });
 elements.openViewer.addEventListener("click", () => showEmbeddedViewer().catch(showError));
 elements.downloadPdf.addEventListener("click", downloadCapturedPdf);
-window.addEventListener("message", handlePdfViewerMessage);
 window.addEventListener("unload", cleanup);
 startPrint().catch(showError);

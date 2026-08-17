@@ -23,7 +23,7 @@ jobs:
         shell: pwsh
         run: |
           node --check viewer.js
-          node -e 'const fs=require("fs"),crypto=require("crypto");const m=JSON.parse(fs.readFileSync("manifest.json","utf8"));if(m.permissions?.includes("nativeMessaging"))throw new Error("nativeMessaging must not be enabled");const der=Buffer.from(m.key,"base64");const h=crypto.createHash("sha256").update(der).digest().subarray(0,16);const id=[...h].map(b=>String.fromCharCode(97+(b>>4),97+(b&15))).join("");if(id!=="oimlipggfonleadilhogfoaekjenbkln")throw new Error("Unexpected extension ID: "+id);'
+          node -e 'const fs=require("fs"),crypto=require("crypto");const m=JSON.parse(fs.readFileSync("manifest.json","utf8"));if(m.permissions?.includes("nativeMessaging"))throw new Error("nativeMessaging must not be enabled");if(m.mime_types_handler?.["application/pdf"]?.can_embed)throw new Error("Embedded PDFs must go directly to Edge");const der=Buffer.from(m.key,"base64");const h=crypto.createHash("sha256").update(der).digest().subarray(0,16);const id=[...h].map(b=>String.fromCharCode(97+(b>>4),97+(b&15))).join("");if(id!=="oimlipggfonleadilhogfoaekjenbkln")throw new Error("Unexpected extension ID: "+id);'
           if (Test-Path -LiteralPath native-host) {
             throw "The no-host branch must not contain native-host files."
           }

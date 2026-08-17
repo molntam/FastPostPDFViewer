@@ -23,7 +23,7 @@ It does not parse, resize or rasterize the PDF through PDF.js or canvas. The sel
             v
     Selected PPM-installed printer
 
-The extension's loading screen stays over the embedded viewer. Once the PDF frame is ready, the extension hides the overlay and calls the browser's print command. It first targets the PDF frame and falls back to printing the full-page host document when Edge isolates the Adobe viewer. Print-only styling removes the extension overlay from the job. Recovery controls can retry the command, reveal the Edge viewer or download the captured PDF.
+The extension handles only top-level PDF navigations. Its own embedded PDF therefore goes directly to Edge's native viewer instead of being intercepted and copied through the extension a second time. A tiny blank PDF starts the Edge PDF engine in an off-screen frame while the POST response is being received, overlapping Adobe's cold-start work with the download. Once the real PDF frame is ready, the extension hides the overlay and calls the browser's print command. Print-only styling removes the extension overlay from the job.
 
 ## Install
 
@@ -41,6 +41,7 @@ If an older copy of this folder is already loaded, select **Reload** on its exte
 
 - The automatic handler accepts only the exact HTTPS origin `https://solutions.inet-logistics.com`.
 - PDFs from every other origin are returned to Edge's native handler.
+- Embedded PDFs are never intercepted, avoiding a second full pass through the extension.
 - The captured PDF is limited to 128 MB.
 - The original PDF is used as the print source; the extension creates no page images.
 - PPM routing occurs after a PPM-installed printer is selected in Edge's print dialog.
@@ -49,7 +50,7 @@ If an older copy of this folder is already loaded, select **Reload** on its exte
 
 ## Why this is a trial
 
-Windows Edge extensions do not have an API for submitting a PDF directly to an installed printer. Edge's Adobe-backed viewer ignored the Chromium embedded-viewer print message in testing, so this version instead invokes the browser print command against the loaded PDF frame or its full-page host. Test the exact label and document types used at work before replacing the current extension.
+Windows Edge extensions do not have an API for submitting a PDF directly to an installed printer. Edge's Adobe-backed viewer ignored the Chromium embedded-viewer print message in testing, so this version invokes the browser print command against the loaded PDF frame or its full-page host. Adobe still controls its own parsing time, but the extension now overlaps its startup with the download and no longer adds a second stream pass. Test the exact label and document types used at work before replacing the current extension.
 
 ## Repository note
 

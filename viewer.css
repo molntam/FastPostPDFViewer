@@ -99,6 +99,17 @@ button {
   background: var(--background);
 }
 
+#pdfWarmup {
+  position: fixed;
+  top: 0;
+  left: -64px;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
 @media print {
   html,
   body {
@@ -108,7 +119,8 @@ button {
     background: #fff;
   }
 
-  #busyOverlay {
+  #busyOverlay,
+  #pdfWarmup {
     display: none !important;
   }
 
