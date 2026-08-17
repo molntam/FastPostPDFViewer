@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Fast POST PDF Printer",
-  "version": "1.0.6",
-  "description": "Prints PDFs from solutions.inet-logistics.com directly from a 600 DPI canvas without PNG conversion.",
+  "name": "Fast POST PDF Printer Ultra",
+  "version": "1.1.0",
+  "description": "Prints captured PDFs immediately from an adaptive canvas targeting 1200 DPI.",
   "minimum_chrome_version": "151",
   "mime_types_handler": {
     "application/pdf": {

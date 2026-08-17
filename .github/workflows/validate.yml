@@ -1,0 +1,32 @@
+name: Validate ultra-quality canvas branch
+
+on:
+  push:
+    branches:
+      - agent/direct-canvas-ultra-quality
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Validate extension files
+        shell: pwsh
+        run: |
+          node --check viewer.js
+          node -e 'const fs=require("fs");const m=JSON.parse(fs.readFileSync("manifest.json","utf8"));if(m.version!=="1.1.0")throw new Error("Unexpected extension version");if(m.permissions?.includes("nativeMessaging"))throw new Error("nativeMessaging must not be enabled");'
+          if (-not (Select-String -Path viewer.js -SimpleMatch "TARGET_PRINT_RESOLUTION = 1200")) {
+            throw "The ultra-quality branch must target 1200 DPI."
+          }
+          if (-not (Select-String -Path viewer.js -SimpleMatch "PRINT_ROTATION_DEGREES = 180")) {
+            throw "The upside-down output correction is missing."
+          }

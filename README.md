@@ -1,8 +1,10 @@
-# Fast POST PDF Printer for Microsoft Edge 151+
+# Fast POST PDF Printer Ultra for Microsoft Edge 151+
 
 This extension receives `application/pdf` responses directly from Edge's MIME-handler API and opens the Windows print dialog automatically. It works with PDFs returned by POST requests and single-use URLs without repeating the original request.
 
-Version 1.0.6 skips the viewer, renders every captured PDF directly to a print canvas at up to 600 DPI and opens the print dialog immediately. It removes the lossless PNG encode/decode round trip while preserving the same pixel resolution and exact printable-area sizing.
+Version 1.1.0 branches from the fast direct-canvas printer. It skips Edge and Adobe's PDF viewers, targets 1200 DPI, rotates every rendered page by 180 degrees and opens the print dialog immediately. The original PDF remains available for recovery, but browser security does not allow an extension to submit its bytes directly to a Windows printer queue.
+
+The renderer uses the full 1200 DPI target for a typical single-page A4 document. For larger or multi-page documents it automatically reduces the effective DPI only when required to stay within safe browser canvas and memory limits. The loading card displays the actual DPI selected for each page.
 
 The automatic printer only activates for PDFs whose original URL is on `https://solutions.inet-logistics.com`. PDFs from every other origin are returned to Edge's native viewer before their stream is consumed.
 
@@ -24,7 +26,9 @@ Close any PDF tabs opened with the previous version before testing the updated e
 
 - Edge 151 or newer is required.
 - PDF.js is bundled locally; the extension makes no CDN request.
-- Printing prepares the document at up to 600 DPI, declares the PDF's physical page size and leaves a 6 mm safe margin before opening the Windows print dialog.
+- Printing targets 1200 DPI, declares the PDF's physical page size and leaves a 6 mm safe margin before opening the Windows print dialog.
+- Every page receives an additional 180-degree rotation to correct the upside-down output from the source documents.
+- A single page may use up to 150 million pixels; the complete document is capped at 180 million pixels to prevent multi-page jobs from exhausting browser memory.
 - The extension has no intermediate PDF viewer. After the print dialog closes, the popup closes automatically when Edge permits it; otherwise it shows a **Close window** button.
 - The source check requires the exact HTTPS origin `https://solutions.inet-logistics.com`; HTTP, subdomains and similar-looking domains are not accepted.
 - If two extensions register for PDFs, the most recently installed one becomes the active handler.

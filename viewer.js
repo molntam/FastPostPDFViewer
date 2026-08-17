@@ -8,8 +8,11 @@ const elements = {
 
 const PDF_POINTS_PER_INCH = 72;
 const MM_PER_POINT = 25.4 / PDF_POINTS_PER_INCH;
-const PRINT_RESOLUTION = 600;
-const MAX_PRINT_PIXELS = 40000000;
+const TARGET_PRINT_RESOLUTION = 1200;
+const PRINT_ROTATION_DEGREES = 180;
+const MAX_PAGE_PRINT_PIXELS = 150000000;
+const MAX_DOCUMENT_PRINT_PIXELS = 180000000;
+const MAX_CANVAS_DIMENSION = 16384;
 const PRINT_SAFE_MARGIN_MM = 6;
 const PRINT_LAYOUT_EPSILON_MM = 0.2;
 const ALLOWED_PDF_ORIGIN = "https://solutions.inet-logistics.com";
@@ -260,12 +263,22 @@ async function loadPdf(buffer) {
   return loadingTask.promise;
 }
 
-function getPrintUnits(viewport) {
-  const requestedUnits = PRINT_RESOLUTION / PDF_POINTS_PER_INCH;
-  const pixelLimitUnits = Math.sqrt(
-    MAX_PRINT_PIXELS / (viewport.width * viewport.height),
+function getPrintUnits(viewport, pageCount) {
+  const requestedUnits = TARGET_PRINT_RESOLUTION / PDF_POINTS_PER_INCH;
+  const pagePixelLimitUnits = Math.sqrt(
+    MAX_PAGE_PRINT_PIXELS / (viewport.width * viewport.height),
   );
-  return Math.min(requestedUnits, pixelLimitUnits);
+  const documentPixelLimitUnits = Math.sqrt(
+    MAX_DOCUMENT_PRINT_PIXELS / (viewport.width * viewport.height * pageCount),
+  );
+  const dimensionLimitUnits = MAX_CANVAS_DIMENSION
+    / Math.max(viewport.width, viewport.height);
+  return Math.min(
+    requestedUnits,
+    pagePixelLimitUnits,
+    documentPixelLimitUnits,
+    dimensionLimitUnits,
+  );
 }
 
 function setPrintPageSize(pageSizes) {
@@ -303,10 +316,15 @@ async function preparePrintPages() {
     );
 
     const page = await pdfDocument.getPage(pageNumber);
-    const viewport = page.getViewport({ scale: 1 });
-    const printUnits = getPrintUnits(viewport);
+    const rotation = (page.rotate + PRINT_ROTATION_DEGREES + 360) % 360;
+    const viewport = page.getViewport({ scale: 1, rotation });
+    const printUnits = getPrintUnits(viewport, pdfDocument.numPages);
+    const actualResolution = Math.floor(printUnits * PDF_POINTS_PER_INCH);
     const canvas = document.createElement("canvas");
     const context = canvas.getContext("2d", { alpha: false });
+    if (!context) {
+      throw new Error("Edge could not allocate the high-resolution print canvas");
+    }
     const contentWidth = Math.max(
       1,
       viewport.width * MM_PER_POINT - 2 * PRINT_SAFE_MARGIN_MM - PRINT_LAYOUT_EPSILON_MM,
@@ -325,8 +343,15 @@ async function preparePrintPages() {
     pageSizes.push({ width: viewport.width, height: viewport.height });
     canvas.width = Math.floor(viewport.width * printUnits);
     canvas.height = Math.floor(viewport.height * printUnits);
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = "high";
     context.fillStyle = "rgb(255, 255, 255)";
     context.fillRect(0, 0, canvas.width, canvas.height);
+
+    setBusy(
+      `Rendering print page ${pageNumber} of ${pdfDocument.numPages} at ${actualResolution} DPI`,
+      (pageNumber - 0.5) / pdfDocument.numPages * 100,
+    );
 
     await page.render({
       canvasContext: context,
