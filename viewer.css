@@ -78,6 +78,27 @@ button {
   width: 220px;
 }
 
+#actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+#actions[hidden] {
+  display: none;
+}
+
+#pdfFrame {
+  position: fixed;
+  z-index: 1;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: var(--background);
+}
+
 @keyframes spin {
   to {
     transform: rotate(360deg);

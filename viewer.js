@@ -1,25 +1,33 @@
 const elements = {
+  actions: document.getElementById("actions"),
   busyOverlay: document.getElementById("busyOverlay"),
   busyProgress: document.getElementById("busyProgress"),
   busyText: document.getElementById("busyText"),
-  errorFallback: document.getElementById("errorFallback"),
+  downloadPdf: document.getElementById("downloadPdf"),
+  openViewer: document.getElementById("openViewer"),
+  pdfFrame: document.getElementById("pdfFrame"),
+  retryPrint: document.getElementById("retryPrint"),
 };
 
 const ALLOWED_PDF_ORIGIN = "https://solutions.inet-logistics.com";
-const NATIVE_HOST_NAME = "com.molntam.fast_post_pdf_printer";
 const MAX_PDF_BYTES = 128 * 1024 * 1024;
+const AUTO_PRINT_DELAY_MS = 750;
+const RECOVERY_DELAY_MS = 12000;
 
 let blobUrl = null;
-let currentPhase = "preparing the print job";
+let currentPhase = "preparing the print";
 let documentName = "document.pdf";
-let printFinished = false;
+let frameLoadSequence = 0;
+let pdfFrameStarted = false;
+let printedSequence = -1;
+let recoveryTimer = null;
 let streamInfo = null;
 
 function setBusy(message, progress = null) {
   elements.busyOverlay.hidden = false;
-  elements.busyOverlay.querySelector(".busy-card").classList.remove("error", "done");
+  elements.busyOverlay.querySelector(".busy-card").classList.remove("error");
   elements.busyText.textContent = message;
-  elements.errorFallback.hidden = true;
+  elements.actions.hidden = true;
 
   if (progress === null) {
     elements.busyProgress.hidden = true;
@@ -35,41 +43,29 @@ function setPhase(phase, progress = null) {
   setBusy(phase + "…", progress);
 }
 
-function normalizeNativeHostError(error) {
-  const value = error instanceof Error ? error : new Error(String(error));
-  const message = value.message.toLowerCase();
-
-  if (message.includes("native messaging host") || message.includes("native host")) {
-    return new Error(
-      "The Windows printing bridge is not installed or is unavailable. Run native-host\\install.ps1, reload the extension, and try again.",
-    );
-  }
-
-  return value;
+function showActions(message) {
+  elements.busyOverlay.hidden = false;
+  elements.busyText.textContent = message;
+  elements.busyProgress.hidden = true;
+  elements.actions.hidden = false;
+  const pdfReady = Boolean(blobUrl && frameLoadSequence);
+  elements.retryPrint.hidden = !pdfReady;
+  elements.openViewer.textContent = pdfReady
+    ? "Show Edge viewer"
+    : streamInfo
+      ? "Open Edge viewer"
+      : "Close window";
+  elements.downloadPdf.hidden = !blobUrl;
 }
 
 function showError(error) {
-  const value = normalizeNativeHostError(error);
+  const value = error instanceof Error ? error : new Error(String(error));
   console.error(value);
-  elements.busyOverlay.hidden = false;
   elements.busyOverlay.querySelector(".busy-card").classList.add("error");
-  elements.busyText.textContent = "Stopped while " + currentPhase.toLowerCase()
-    + ": " + value.name + ": " + value.message;
-  elements.busyProgress.hidden = true;
-  elements.errorFallback.textContent = blobUrl
-    ? "Download captured PDF"
-    : "Open in Edge viewer";
-  elements.errorFallback.hidden = false;
-}
-
-function setDone(message) {
-  printFinished = true;
-  elements.busyOverlay.hidden = false;
-  elements.busyOverlay.querySelector(".busy-card").classList.add("done");
-  elements.busyText.textContent = message;
-  elements.busyProgress.hidden = true;
-  elements.errorFallback.textContent = "Close window";
-  elements.errorFallback.hidden = false;
+  showActions(
+    "Stopped while " + currentPhase.toLowerCase()
+      + ": " + value.name + ": " + value.message,
+  );
 }
 
 function formatBytes(bytes) {
@@ -142,40 +138,42 @@ function isAllowedSourceUrl(value) {
   }
 }
 
-function downloadCapturedPdf() {
-  if (!blobUrl) {
-    return;
+function isOwnEmbeddedBlob(info) {
+  if (!info.embedded || !info.originalUrl.startsWith("blob:")) {
+    return false;
   }
 
-  const link = document.createElement("a");
-  link.href = blobUrl;
-  link.download = documentName;
-  link.click();
-}
-
-async function fallbackToEdge() {
   try {
-    await chrome.mimeHandler.abortAndFallbackToNativeHandler();
-  } catch (error) {
-    showError(error);
+    return new URL(info.originalUrl.slice(5)).origin === location.origin;
+  } catch {
+    return false;
   }
 }
 
-function handleRecovery() {
-  if (printFinished) {
-    window.close();
-  } else if (blobUrl) {
-    downloadCapturedPdf();
-  } else {
-    fallbackToEdge();
+async function fallbackToEdge(info) {
+  if (isOwnEmbeddedBlob(info)) {
+    const response = await fetch(info.streamUrl);
+    if (!response.ok) {
+      throw new Error("The embedded PDF stream returned HTTP " + response.status);
+    }
+    if (response.body?.getReader) {
+      const reader = response.body.getReader();
+      while (!(await reader.read()).done) {
+        // Drain the stream so Edge can replay its cached body in the built-in viewer.
+      }
+    } else {
+      await response.arrayBuffer();
+    }
   }
+
+  await chrome.mimeHandler.abortAndFallbackToNativeHandler();
 }
 
 async function readStreamResponse(response) {
   if (!response.body?.getReader) {
     const buffer = await response.arrayBuffer();
     if (buffer.byteLength > MAX_PDF_BYTES) {
-      throw new Error("The PDF exceeds the 128 MB native-printing limit");
+      throw new Error("The PDF exceeds the 128 MB auto-printing limit");
     }
     return buffer;
   }
@@ -188,7 +186,7 @@ async function readStreamResponse(response) {
   let received = 0;
 
   if (declaredLength > MAX_PDF_BYTES) {
-    throw new Error("The PDF exceeds the 128 MB native-printing limit");
+    throw new Error("The PDF exceeds the 128 MB auto-printing limit");
   }
 
   while (true) {
@@ -201,7 +199,7 @@ async function readStreamResponse(response) {
     received += value.byteLength;
     if (received > MAX_PDF_BYTES) {
       await reader.cancel();
-      throw new Error("The PDF exceeds the 128 MB native-printing limit");
+      throw new Error("The PDF exceeds the 128 MB auto-printing limit");
     }
 
     if (declaredLength) {
@@ -252,7 +250,7 @@ async function capturePdfStream() {
   streamInfo = await chrome.mimeHandler.getStreamInfo();
   if (!isAllowedSourceUrl(streamInfo.originalUrl)) {
     setPhase("Opening PDF in Edge viewer");
-    await chrome.mimeHandler.abortAndFallbackToNativeHandler();
+    await fallbackToEdge(streamInfo);
     return null;
   }
 
@@ -262,11 +260,9 @@ async function capturePdfStream() {
 
   const slowStreamTimer = setTimeout(() => {
     if (currentPhase === "Receiving PDF") {
-      elements.busyText.textContent =
-        "Edge has not released the PDF stream yet. You can wait or use the Edge viewer fallback.";
-      elements.errorFallback.hidden = false;
+      elements.busyText.textContent = "Edge is still receiving the PDF from the work system.";
     }
-  }, 12000);
+  }, RECOVERY_DELAY_MS);
 
   try {
     const response = await fetch(streamInfo.streamUrl);
@@ -279,74 +275,75 @@ async function capturePdfStream() {
   }
 }
 
-function blobToBase64(blob) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(reader.error || new Error("The PDF could not be encoded"));
-    reader.onload = () => {
-      const value = String(reader.result || "");
-      const separator = value.indexOf(",");
-      if (separator < 0) {
-        reject(new Error("The PDF could not be encoded"));
-        return;
-      }
-      resolve(value.slice(separator + 1));
-    };
-    reader.readAsDataURL(blob);
-  });
+function downloadCapturedPdf() {
+  if (!blobUrl) {
+    return;
+  }
+
+  const link = document.createElement("a");
+  link.href = blobUrl;
+  link.download = documentName;
+  link.click();
 }
 
-function sendToNativePrinter(payload) {
-  return new Promise((resolve, reject) => {
-    let port;
-    let settled = false;
+function postToPdfViewer(message) {
+  elements.pdfFrame.contentWindow?.postMessage(message, "*");
+}
 
-    function complete(callback, value) {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      callback(value);
-      try {
-        port?.disconnect();
-      } catch {
-        // The native host already closed.
-      }
+function requestPrint(sequence, force = false) {
+  if (sequence !== frameLoadSequence || (!force && printedSequence === sequence)) {
+    return;
+  }
+
+  printedSequence = sequence;
+  setPhase("Opening Edge print dialog", 100);
+  postToPdfViewer({ type: "print" });
+
+  clearTimeout(recoveryTimer);
+  recoveryTimer = setTimeout(() => {
+    showActions("If the print dialog did not open, try again or show the Edge viewer.");
+  }, RECOVERY_DELAY_MS);
+}
+
+function handlePdfFrameLoad() {
+  if (!pdfFrameStarted) {
+    return;
+  }
+
+  frameLoadSequence += 1;
+  const sequence = frameLoadSequence;
+  postToPdfViewer({ type: "getSelectedText" });
+
+  setTimeout(() => {
+    requestPrint(sequence);
+  }, AUTO_PRINT_DELAY_MS);
+}
+
+function handlePdfViewerMessage(event) {
+  if (event.source !== elements.pdfFrame.contentWindow || event.data?.type !== "documentLoaded") {
+    return;
+  }
+
+  requestPrint(frameLoadSequence);
+}
+
+async function showEmbeddedViewer() {
+  if (!blobUrl) {
+    if (streamInfo) {
+      await fallbackToEdge(streamInfo);
+    } else {
+      window.close();
     }
+    return;
+  }
 
-    try {
-      port = chrome.runtime.connectNative(NATIVE_HOST_NAME);
-    } catch (error) {
-      reject(error);
-      return;
-    }
-
-    port.onMessage.addListener((response) => {
-      if (response?.ok || response?.cancelled) {
-        complete(resolve, response);
-        return;
-      }
-      complete(reject, new Error(response?.error || "The native printer rejected the job"));
-    });
-
-    port.onDisconnect.addListener(() => {
-      if (settled) {
-        return;
-      }
-      const message = chrome.runtime.lastError?.message
-        || "The native printing bridge closed before returning a result";
-      complete(reject, new Error(message));
-    });
-
-    try {
-      port.postMessage(payload);
-    } catch (error) {
-      complete(reject, error);
-    }
-  });
+  clearTimeout(recoveryTimer);
+  elements.busyOverlay.hidden = true;
+  elements.pdfFrame.focus();
 }
 
 function cleanup() {
+  clearTimeout(recoveryTimer);
   if (blobUrl) {
     URL.revokeObjectURL(blobUrl);
     blobUrl = null;
@@ -360,32 +357,16 @@ async function startPrint() {
   }
 
   validatePdf(buffer);
-  const pdfBlob = new Blob([buffer], { type: "application/pdf" });
-  blobUrl = URL.createObjectURL(pdfBlob);
-
-  setPhase("Sending original PDF to Personal Print Manager", 100);
-  const response = await sendToNativePrinter({
-    action: "printPdf",
-    fileName: documentName,
-    sourceUrl: streamInfo.originalUrl,
-    pdfBase64: await blobToBase64(pdfBlob),
-  });
-
-  if (response.cancelled) {
-    setDone("Printing cancelled. You can close this window.");
-    window.close();
-    return;
-  }
-
-  const printerName = response.printerName || "the selected printer";
-  const jobCount = Array.isArray(response.jobIds) ? response.jobIds.length : 1;
-  setDone(
-    "Original PDF sent to " + printerName + " as "
-      + jobCount + (jobCount === 1 ? " print job." : " print jobs."),
-  );
-  window.close();
+  blobUrl = URL.createObjectURL(new Blob([buffer], { type: "application/pdf" }));
+  setPhase("Loading original PDF in Edge");
+  pdfFrameStarted = true;
+  elements.pdfFrame.src = blobUrl;
 }
 
-elements.errorFallback.addEventListener("click", handleRecovery);
+elements.pdfFrame.addEventListener("load", handlePdfFrameLoad);
+elements.retryPrint.addEventListener("click", () => requestPrint(frameLoadSequence, true));
+elements.openViewer.addEventListener("click", () => showEmbeddedViewer().catch(showError));
+elements.downloadPdf.addEventListener("click", downloadCapturedPdf);
+window.addEventListener("message", handlePdfViewerMessage);
 window.addEventListener("unload", cleanup);
 startPrint().catch(showError);

@@ -1,9 +1,9 @@
-name: Validate native PDF printing branch
+name: Validate no-host PDF printing branch
 
 on:
   push:
     branches:
-      - agent/ppm-raw-pdf-printing
+      - agent/ppm-auto-print-no-host
   pull_request:
 
 permissions:
@@ -23,14 +23,10 @@ jobs:
         shell: pwsh
         run: |
           node --check viewer.js
-          node -e 'const fs=require("fs"),crypto=require("crypto");const m=JSON.parse(fs.readFileSync("manifest.json","utf8"));if(!m.permissions.includes("nativeMessaging"))throw new Error("nativeMessaging permission missing");const der=Buffer.from(m.key,"base64");const h=crypto.createHash("sha256").update(der).digest().subarray(0,16);const id=[...h].map(b=>String.fromCharCode(97+(b>>4),97+(b&15))).join("");if(id!=="oimlipggfonleadilhogfoaekjenbkln")throw new Error("Unexpected extension ID: "+id);'
-
-      - name: Compile Windows native host
-        shell: pwsh
-        run: |
-          $compiler = Join-Path $env:WINDIR "Microsoft.NET\Framework64\v4.0.30319\csc.exe"
-          $output = Join-Path $env:RUNNER_TEMP "FastPostPdfPrinterHost.exe"
-          & $compiler /nologo /optimize+ /target:winexe "/out:$output" /reference:System.dll /reference:System.Core.dll /reference:System.Drawing.dll /reference:System.Web.Extensions.dll /reference:System.Windows.Forms.dll native-host\FastPostPdfPrinterHost.cs
-          if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $output)) {
-            throw "Native host compilation failed."
+          node -e 'const fs=require("fs"),crypto=require("crypto");const m=JSON.parse(fs.readFileSync("manifest.json","utf8"));if(m.permissions?.includes("nativeMessaging"))throw new Error("nativeMessaging must not be enabled");const der=Buffer.from(m.key,"base64");const h=crypto.createHash("sha256").update(der).digest().subarray(0,16);const id=[...h].map(b=>String.fromCharCode(97+(b>>4),97+(b&15))).join("");if(id!=="oimlipggfonleadilhogfoaekjenbkln")throw new Error("Unexpected extension ID: "+id);'
+          if (Test-Path -LiteralPath native-host) {
+            throw "The no-host branch must not contain native-host files."
+          }
+          if (Select-String -Path viewer.js -Pattern "pdf.min.mjs|canvas|connectNative") {
+            throw "The no-host branch must not use PDF.js, canvas or native messaging."
           }

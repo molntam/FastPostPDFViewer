@@ -1,10 +1,10 @@
-# Fast POST PDF PPM Printer for Microsoft Edge 151+
+# Fast POST PDF Auto Printer for Microsoft Edge 151+
 
-This experimental branch captures application/pdf responses from solutions.inet-logistics.com, including POST responses and single-use URLs, and submits the original PDF bytes to a Windows printer queue.
+This experimental extension captures `application/pdf` responses from `https://solutions.inet-logistics.com`, including POST responses and single-use URLs, then opens the original PDF in Edge's built-in PDF engine and requests its print dialog automatically.
 
-It does not render the PDF through PDF.js, canvas or PNG. Personal Print Manager/VPSX or the destination printer performs the final device conversion, preserving vector text and barcodes whenever the configured queue supports PDF.
+It does not parse, resize or rasterize the PDF through PDF.js or canvas. The selected Windows printer queue receives the job through Edge's normal printing pipeline, so printers installed through Personal Print Manager remain available and route through PPM automatically.
 
-## How it works
+## Flow
 
     POST-generated PDF
             |
@@ -15,59 +15,42 @@ It does not render the PDF through PDF.js, canvas or PNG. Personal Print Manager
     Extension keeps original PDF bytes
             |
             v
-    Edge Native Messaging
+    Embedded Edge PDF viewer
             |
             v
-    Windows native printing bridge
+    Edge print dialog
             |
             v
-    Selected PPM-installed printer queue
+    Selected PPM-installed printer
 
-The native Windows print dialog opens automatically after Edge releases the PDF stream. The intermediate PDF viewer is skipped completely.
+The extension's loading screen stays over the embedded viewer. When Edge reports that the PDF is ready, the extension sends the viewer its print command. If automatic printing is blocked, the recovery controls can retry the command, reveal the Edge viewer or download the captured PDF.
 
 ## Install
 
 1. Download or extract this branch to a permanent folder.
-2. Open edge://extensions.
-3. Enable Developer mode.
-4. Disable or remove the earlier Fast POST PDF Printer extension.
-5. Select Load unpacked and choose this folder.
-6. Confirm that the extension ID is oimlipggfonleadilhogfoaekjenbkln.
-7. Open Windows PowerShell normally.
-8. Change to the native-host folder inside this extension.
-9. Run .\install.ps1.
-10. Return to edge://extensions and reload Fast POST PDF PPM Printer.
-11. Generate a POST-based PDF in the work system.
+2. Open `edge://extensions`.
+3. Enable **Developer mode**.
+4. Remove the earlier experimental Fast POST PDF extension, or replace its files in the same folder and reload it.
+5. Select **Load unpacked** and choose this folder.
+6. Generate a POST-based PDF in the work system.
+7. Select a Personal Print Manager printer in the Edge print dialog.
 
-The installer compiles the small Windows bridge with the .NET Framework compiler already included with Windows, copies it to %LOCALAPPDATA%\FastPostPdfPrinter, and registers it for the current Windows user. Administrator rights are not normally required.
+If an older copy of this folder is already loaded, select **Reload** on its extension card after replacing the files. Close PDF tabs created by the previous version before testing because an intercepted MIME stream belongs to its original tab.
 
-## Printing
+## Behavior
 
-- Select one of the printers installed through Personal Print Manager in the Windows print dialog.
-- The captured PDF is submitted to that queue as RAW PDF data.
-- Copies are supported and are submitted as separate unchanged PDF jobs.
-- PDF page size and orientation are retained.
-- Raster DPI is not selected in the extension because the PDF remains vector. VPSX, its PDF transform or the printer renders at the configured device resolution.
-- Driver-specific layout controls do not modify RAW data. Configure tray, media and printable-area behavior in the PPM/VPSX queue defaults.
-- The direct-IP Ship printer can still be selected as a test or fallback only if that queue accepts PDF directly.
+- The automatic handler accepts only the exact HTTPS origin `https://solutions.inet-logistics.com`.
+- PDFs from every other origin are returned to Edge's native handler.
+- The captured PDF is limited to 128 MB.
+- The original PDF is used as the print source; the extension creates no page images.
+- PPM routing occurs after a PPM-installed printer is selected in Edge's print dialog.
+- Edge and the Windows printer driver still control the final spool format and device rendering.
+- If the automatic command does not open the dialog, select **Open print dialog** or **Show Edge viewer**.
 
-## Safety and fallback
+## Why this is a trial
 
-- The automatic handler accepts only the exact HTTPS origin https://solutions.inet-logistics.com.
-- The Windows bridge performs the same origin check and validates the PDF header.
-- Only this extension's fixed ID is allowed to connect to the bridge.
-- PDFs from other origins are returned to Edge before their stream is consumed.
-- If the bridge is missing or a queue rejects the job, the captured PDF can be downloaded from the error screen.
-- Captured PDFs are limited to 128 MB.
-
-## Important queue requirement
-
-The selected PPM/VPSX queue must accept PDF data or have an LRS transform that converts PDF to the printer's required language. LRS VPSX supports PDF data streams, but an organization's queue configuration determines whether RAW PDF submission is enabled.
-
-## Uninstall the bridge
-
-Run .\native-host\uninstall.ps1. It removes only the current-user Edge Native Messaging registration and %LOCALAPPDATA%\FastPostPdfPrinter.
+Windows Edge extensions do not have an API for submitting a PDF directly to an installed printer. This version instead uses the scripting interface exposed by Edge's embedded PDF viewer. The interface is inherited from Chromium, but Microsoft can change the Adobe-backed viewer integration independently. Test the exact label and document types used at work before replacing the current extension.
 
 ## Repository note
 
-The PDF.js assets remain in this branch so it can be compared easily with the browser-rendering branches, but this native-printing version never imports or executes them.
+The existing PDF.js assets remain only to keep comparison with the canvas-printing branches simple. This branch does not import or execute them and does not require a native messaging host.
