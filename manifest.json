@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Fast POST PDF Printer",
-  "version": "1.0.5",
-  "description": "Opens PDFs from solutions.inet-logistics.com, including POST responses, directly in the print dialog.",
+  "name": "Fast POST PDF Memory Printer",
+  "version": "1.1.0",
+  "description": "Captures the page PDF action in memory and prints it from a rotated monochrome canvas.",
   "minimum_chrome_version": "151",
   "mime_types_handler": {
     "application/pdf": {
@@ -12,5 +12,13 @@
   },
   "content_security_policy": {
     "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
-  }
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://solutions.inet-logistics.com/*"],
+      "js": ["page-print-hook.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    }
+  ]
 }

@@ -9,6 +9,7 @@ const elements = {
 const PDF_POINTS_PER_INCH = 72;
 const MM_PER_POINT = 25.4 / PDF_POINTS_PER_INCH;
 const PRINT_RESOLUTION = 600;
+const PRINT_ROTATION_DEGREES = 180;
 const MAX_PRINT_PIXELS = 40000000;
 const PRINT_SAFE_MARGIN_MM = 6;
 const PRINT_LAYOUT_EPSILON_MM = 0.2;
@@ -20,7 +21,6 @@ let documentName = "document.pdf";
 let pdfDocument = null;
 let printFinished = false;
 let printPageStyleSheet = null;
-let printUrls = [];
 let streamInfo = null;
 
 function setBusy(message, progress = null) {
@@ -261,24 +261,20 @@ async function loadPdf(buffer) {
   return loadingTask.promise;
 }
 
-function blobFromCanvas(canvas) {
-  return new Promise((resolve, reject) => {
-    canvas.toBlob((blob) => {
-      if (blob) {
-        resolve(blob);
-      } else {
-        reject(new Error("A print page could not be prepared"));
-      }
-    }, "image/png");
-  });
-}
-
 function getPrintUnits(viewport) {
   const requestedUnits = PRINT_RESOLUTION / PDF_POINTS_PER_INCH;
   const pixelLimitUnits = Math.sqrt(
     MAX_PRINT_PIXELS / (viewport.width * viewport.height),
   );
   return Math.min(requestedUnits, pixelLimitUnits);
+}
+
+function convertCanvasToGrayscale(context, width, height) {
+  context.save();
+  context.globalCompositeOperation = "saturation";
+  context.fillStyle = "rgb(0, 0, 0)";
+  context.fillRect(0, 0, width, height);
+  context.restore();
 }
 
 function setPrintPageSize(pageSizes) {
@@ -316,7 +312,8 @@ async function preparePrintPages() {
     );
 
     const page = await pdfDocument.getPage(pageNumber);
-    const viewport = page.getViewport({ scale: 1 });
+    const rotation = (page.rotate + PRINT_ROTATION_DEGREES + 360) % 360;
+    const viewport = page.getViewport({ scale: 1, rotation });
     const printUnits = getPrintUnits(viewport);
     const canvas = document.createElement("canvas");
     const context = canvas.getContext("2d", { alpha: false });
@@ -327,6 +324,12 @@ async function preparePrintPages() {
     const contentHeight = Math.max(
       1,
       viewport.height * MM_PER_POINT - 2 * PRINT_SAFE_MARGIN_MM - PRINT_LAYOUT_EPSILON_MM,
+    );
+    const sourceWidth = viewport.width * MM_PER_POINT;
+    const sourceHeight = viewport.height * MM_PER_POINT;
+    const displayScale = Math.min(
+      contentWidth / sourceWidth,
+      contentHeight / sourceHeight,
     );
 
     pageSizes.push({ width: viewport.width, height: viewport.height });
@@ -342,24 +345,17 @@ async function preparePrintPages() {
       intent: "print",
       optionalContentConfigPromise,
     }).promise;
+    convertCanvasToGrayscale(context, canvas.width, canvas.height);
 
-    const imageBlob = await blobFromCanvas(canvas);
-    const imageUrl = URL.createObjectURL(imageBlob);
     const wrapper = document.createElement("div");
-    const image = document.createElement("img");
 
-    printUrls.push(imageUrl);
     wrapper.className = "print-page";
     wrapper.style.width = `${contentWidth.toFixed(3)}mm`;
     wrapper.style.height = `${contentHeight.toFixed(3)}mm`;
-    image.src = imageUrl;
-    image.alt = `Page ${pageNumber}`;
-    wrapper.append(image);
+    canvas.style.width = `${(sourceWidth * displayScale).toFixed(3)}mm`;
+    canvas.style.height = `${(sourceHeight * displayScale).toFixed(3)}mm`;
+    wrapper.append(canvas);
     elements.printContainer.append(wrapper);
-    await image.decode();
-
-    canvas.width = 1;
-    canvas.height = 1;
   }
 
   setPrintPageSize(pageSizes);
@@ -372,10 +368,7 @@ function cleanup() {
     );
     printPageStyleSheet = null;
   }
-  for (const url of printUrls) {
-    URL.revokeObjectURL(url);
-  }
-  printUrls = [];
+  elements.printContainer.replaceChildren();
   if (blobUrl) {
     URL.revokeObjectURL(blobUrl);
     blobUrl = null;
