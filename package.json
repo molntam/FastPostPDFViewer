@@ -1,0 +1,12 @@
+{
+  "name": "fast-post-pdf-viewer",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --experimental-vm-modules --test tests/*.test.mjs",
+    "check": "node --check viewer.js && node --check page-print-hook.js && node --check print-settings.js && node --check options.js"
+  },
+  "devDependencies": {
+    "@napi-rs/canvas": "0.1.100"
+  }
+}

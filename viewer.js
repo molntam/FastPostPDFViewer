@@ -1,3 +1,5 @@
+import { readPrintRotation } from "./print-settings.js";
+
 const elements = {
   busyOverlay: document.getElementById("busyOverlay"),
   busyProgress: document.getElementById("busyProgress"),
@@ -9,7 +11,6 @@ const elements = {
 const PDF_POINTS_PER_INCH = 72;
 const MM_PER_POINT = 25.4 / PDF_POINTS_PER_INCH;
 const PRINT_RESOLUTION = 600;
-const PRINT_ROTATION_DEGREES = 180;
 const MAX_PRINT_PIXELS = 40000000;
 const PRINT_SAFE_MARGIN_MM = 6;
 const PRINT_LAYOUT_EPSILON_MM = 0.2;
@@ -19,6 +20,7 @@ let blobUrl = null;
 let currentPhase = "preparing the print";
 let documentName = "document.pdf";
 let pdfDocument = null;
+let pdfLoadingTask = null;
 let printFinished = false;
 let printPageStyleSheet = null;
 let streamInfo = null;
@@ -234,7 +236,7 @@ async function loadPdf(buffer) {
   );
 
   const loadingTask = pdfjsLib.getDocument({
-    data: new Uint8Array(buffer.slice(0)),
+    data: new Uint8Array(buffer),
     cMapUrl: chrome.runtime.getURL("vendor/cmaps/"),
     cMapPacked: true,
     standardFontDataUrl: chrome.runtime.getURL("vendor/standard_fonts/"),
@@ -243,6 +245,7 @@ async function loadPdf(buffer) {
     isEvalSupported: false,
     useSystemFonts: true,
   });
+  pdfLoadingTask = loadingTask;
 
   loadingTask.onProgress = ({ loaded, total }) => {
     const percent = total ? loaded / total * 100 : null;
@@ -298,7 +301,7 @@ function setPrintPageSize(pageSizes) {
   ];
 }
 
-async function preparePrintPages() {
+async function preparePrintPages(printRotation) {
   const pageSizes = [];
   const optionalContentConfigPromise = pdfDocument.getOptionalContentConfig({
     intent: "print",
@@ -312,7 +315,7 @@ async function preparePrintPages() {
     );
 
     const page = await pdfDocument.getPage(pageNumber);
-    const rotation = (page.rotate + PRINT_ROTATION_DEGREES + 360) % 360;
+    const rotation = (page.rotate + printRotation + 360) % 360;
     const viewport = page.getViewport({ scale: 1, rotation });
     const printUnits = getPrintUnits(viewport);
     const canvas = document.createElement("canvas");
@@ -335,14 +338,12 @@ async function preparePrintPages() {
     pageSizes.push({ width: viewport.width, height: viewport.height });
     canvas.width = Math.floor(viewport.width * printUnits);
     canvas.height = Math.floor(viewport.height * printUnits);
-    context.fillStyle = "rgb(255, 255, 255)";
-    context.fillRect(0, 0, canvas.width, canvas.height);
-
     await page.render({
       canvasContext: context,
       transform: [printUnits, 0, 0, printUnits, 0, 0],
       viewport,
       intent: "print",
+      background: "rgb(255, 255, 255)",
       optionalContentConfigPromise,
     }).promise;
     convertCanvasToGrayscale(context, canvas.width, canvas.height);
@@ -368,13 +369,19 @@ function cleanup() {
     );
     printPageStyleSheet = null;
   }
+  for (const canvas of elements.printContainer.querySelectorAll("canvas")) {
+    canvas.width = 0;
+    canvas.height = 0;
+  }
   elements.printContainer.replaceChildren();
   if (blobUrl) {
     URL.revokeObjectURL(blobUrl);
     blobUrl = null;
   }
-  pdfDocument?.destroy();
+  const loadingTask = pdfLoadingTask;
+  pdfLoadingTask = null;
   pdfDocument = null;
+  loadingTask?.destroy().catch(console.error);
 }
 
 function finishPrint() {
@@ -395,9 +402,12 @@ function finishPrint() {
 
 async function startPrint() {
   const buffer = await capturePdfStream();
+  // Preserve recovery bytes before PDF.js transfers the buffer to its worker.
   blobUrl = URL.createObjectURL(new Blob([buffer], { type: "application/pdf" }));
+  setPhase("Loading print settings");
+  const printRotation = await readPrintRotation();
   pdfDocument = await loadPdf(buffer);
-  await preparePrintPages();
+  await preparePrintPages(printRotation);
   elements.busyOverlay.hidden = true;
   await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
   window.print();

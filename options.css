@@ -1,0 +1,43 @@
+:root {
+  color-scheme: light dark;
+  font-family: "Segoe UI", Arial, sans-serif;
+  font-size: 14px;
+}
+
+body {
+  min-width: 340px;
+  margin: 0;
+}
+
+main {
+  max-width: 460px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+h1 {
+  margin: 0 0 24px;
+  font-size: 20px;
+}
+
+label {
+  display: block;
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
+select {
+  width: 100%;
+  padding: 8px;
+  font: inherit;
+}
+
+p {
+  line-height: 1.5;
+}
+
+#settingsStatus {
+  min-height: 21px;
+  margin-bottom: 0;
+  font-weight: 600;
+}

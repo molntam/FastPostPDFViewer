@@ -1,9 +1,18 @@
 {
   "manifest_version": 3,
   "name": "Fast POST PDF Memory Printer",
-  "version": "1.1.0",
-  "description": "Captures the page PDF action in memory and prints it from a rotated monochrome canvas.",
+  "version": "1.2.0",
+  "description": "Prints captured PDFs from a 600 DPI monochrome canvas with an optional local printer rotation correction.",
   "minimum_chrome_version": "151",
+  "permissions": ["storage"],
+  "action": {
+    "default_title": "Print settings",
+    "default_popup": "options.html"
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
   "mime_types_handler": {
     "application/pdf": {
       "handler_url": "viewer.html",

@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Print settings</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <main>
+    <h1>Print settings</h1>
+    <label for="printRotation">Printer correction</label>
+    <select id="printRotation" aria-describedby="rotationHelp settingsScope" disabled>
+      <option value="0">Normal (recommended)</option>
+      <option value="180">Rotate 180°</option>
+    </select>
+    <p id="rotationHelp">The PDF's own page orientation is preserved. Choose Rotate 180° only if your printer produces the whole document upside down.</p>
+    <p id="settingsScope">Saved for this Edge profile on this computer. Applies to new print jobs. If you switch printers, check this setting again.</p>
+    <p>If only the backs of two-sided pages are upside down, check the printer's long-edge / short-edge binding setting.</p>
+    <p id="settingsStatus" role="status" aria-live="polite">Loading settings…</p>
+  </main>
+  <script type="module" src="options.js"></script>
+</body>
+</html>
