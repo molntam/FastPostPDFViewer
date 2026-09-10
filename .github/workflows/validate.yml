@@ -1,9 +1,11 @@
-name: Validate in-memory PDF button branch
+name: Validate extension
 
 on:
   push:
     branches:
-      - agent/in-memory-pdf-button
+      - main
+      - 'agent/**'
+      - 'fix/**'
   pull_request:
 
 permissions:
@@ -18,19 +20,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+          cache: npm
 
-      - name: Validate extension files
-        shell: pwsh
-        run: |
-          node --check viewer.js
-          node --check page-print-hook.js
-          node -e 'const fs=require("fs");const m=JSON.parse(fs.readFileSync("manifest.json","utf8"));if(m.version!=="1.1.0")throw new Error("Unexpected extension version");if(m.permissions?.includes("nativeMessaging"))throw new Error("nativeMessaging must not be enabled");const c=m.content_scripts?.[0];if(c?.world!=="MAIN"||!c.matches?.includes("https://solutions.inet-logistics.com/*"))throw new Error("In-memory page hook is not scoped correctly");'
-          if (-not (Select-String -Path viewer.js -SimpleMatch "PRINT_ROTATION_DEGREES = 180")) {
-            throw "The upside-down output correction is missing."
-          }
-          if (-not (Select-String -Path viewer.js -SimpleMatch "convertCanvasToGrayscale")) {
-            throw "The grayscale conversion is missing."
-          }
-          if (-not (Select-String -Path page-print-hook.js -SimpleMatch "window.doPrintPDF()")) {
-            throw "The Save as PDF bridge is missing."
-          }
+      - name: Install test dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Check JavaScript syntax
+        run: npm run check
+
+      - name: Test print orientation and extension behavior
+        run: npm test
